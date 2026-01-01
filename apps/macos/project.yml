@@ -16,6 +16,11 @@ targets:
       - path: VoiceOps/Assets.xcassets
     info:
       path: VoiceOps/Info.plist
+      properties:
+        NSMicrophoneUsageDescription: VoiceOps needs microphone access to record audio.
+        LSUIElement: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voiceops.VoiceOps

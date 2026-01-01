@@ -8,7 +8,7 @@ final class OverlayPanel: NSPanel {
     init(rootView: some View) {
         let hosting = NSHostingView(rootView: rootView)
         let rect = NSRect(x: 0, y: 0, width: 360, height: 180)
-        super.init(contentRect: rect, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        super.init(contentRect: rect, styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
 
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
@@ -24,7 +24,7 @@ final class OverlayPanel: NSPanel {
         contentView = hosting
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
@@ -39,7 +39,7 @@ final class OverlayPanel: NSPanel {
 
     func show() {
         positionTopCenter()
-        makeKeyAndOrderFront(nil)
+        orderFrontRegardless()
     }
 
     func hide() {

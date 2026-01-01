@@ -11,7 +11,8 @@
 ## macOS app
 
 - Launch app and confirm menu bar icon appears.
-- Press Option+Space to start recording, press again to stop.
+- Hold Fn to start streaming; release to stop.
+- Hold Fn+Space to record and polish; release to insert.
 - Verify overlay shows state transitions: Recording -> Transcribing -> Generating -> Ready.
 - Press Enter in overlay to insert output; if Accessibility is disabled, verify clipboard is set.
 - Press Esc to cancel and hide overlay.

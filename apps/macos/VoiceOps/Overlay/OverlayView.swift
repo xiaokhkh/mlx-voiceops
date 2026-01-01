@@ -81,9 +81,9 @@ struct OverlayView: View {
     private var statusHint: String {
         switch pipeline.state {
         case .idle:
-            return "Option+Space"
+            return "Fn / Fn+Space"
         case .recording:
-            return "Press again to stop"
+            return "Release Fn to stop"
         case .transcribing, .generating:
             return "Working..."
         case .ready:

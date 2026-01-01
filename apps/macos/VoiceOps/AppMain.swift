@@ -16,9 +16,19 @@ struct VoiceOpsApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private enum FnSession {
+        case none
+        case pending
+        case streaming
+        case polish
+    }
+
     private var statusItem: NSStatusItem?
     private var panel: OverlayPanel?
     private var hotKey: HotKeyService?
+    private let fnMonitor = FnKeyMonitor()
+    private var fnSession: FnSession = .none
+    private var fnWorkItem: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
 
     private let pipeline = PipelineController()
@@ -30,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupOverlay()
         setupHotKey()
+        setupFnMonitor()
         bindPipeline()
     }
 
@@ -76,6 +87,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             print("HotKey registration failed: \(error)")
         }
+    }
+
+    private func setupFnMonitor() {
+        Permissions.requestAccessibilityIfNeeded()
+        fnMonitor.onFnDown = { [weak self] in
+            self?.handleFnDown()
+        }
+        fnMonitor.onFnUp = { [weak self] in
+            self?.handleFnUp()
+        }
+        fnMonitor.onFnSpace = { [weak self] in
+            self?.handleFnSpace()
+        }
+        fnMonitor.start()
+    }
+
+    private func handleFnDown() {
+        guard fnSession == .none else { return }
+        fnSession = .pending
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.fnSession == .pending else { return }
+            self.fnSession = .streaming
+            self.pipeline.startStreaming()
+        }
+        fnWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    private func handleFnSpace() {
+        if fnSession == .pending {
+            fnWorkItem?.cancel()
+        }
+        guard fnSession != .polish else { return }
+        fnSession = .polish
+        pipeline.startPolishRecording()
+    }
+
+    private func handleFnUp() {
+        fnWorkItem?.cancel()
+        switch fnSession {
+        case .streaming:
+            pipeline.stopStreaming()
+        case .polish:
+            pipeline.stopPolishRecording()
+        case .pending, .none:
+            break
+        }
+        fnSession = .none
     }
 
     private func bindPipeline() {

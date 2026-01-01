@@ -20,12 +20,12 @@
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceOps needs microphone access to record audio.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>VoiceOps needs microphone access to record audio.</string>
 </dict>
 </plist>

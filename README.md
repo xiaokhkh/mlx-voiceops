@@ -58,7 +58,11 @@ cd apps/macos
 xcodegen generate --spec project.yml
 ```
 
-Hotkey: `Option + Space` (toggle record).
+Hotkeys:
+
+- Hold `Fn` to stream transcription into the focused app; release to stop.
+- Hold `Fn + Space` to record and polish via LLM, then insert on release.
+- `Option + Space` remains as a manual toggle (debug).
 
 ## Notes
 

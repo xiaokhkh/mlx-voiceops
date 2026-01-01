@@ -29,4 +29,25 @@ final class InputInjector {
         }
         return true
     }
+
+    func insertViaTyping(_ text: String) -> Bool {
+        guard Permissions.hasAccessibility() else { return false }
+        guard !text.isEmpty else { return true }
+
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let chars = Array(text.utf16)
+
+        chars.withUnsafeBufferPointer { ptr in
+            guard let base = ptr.baseAddress else { return }
+            if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true),
+               let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) {
+                keyDown.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: base)
+                keyUp.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: base)
+                keyDown.post(tap: .cghidEventTap)
+                keyUp.post(tap: .cghidEventTap)
+            }
+        }
+
+        return true
+    }
 }
