@@ -9,6 +9,14 @@ final class FnKeyMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var isFnDown = false
 
+    private func dispatchAction(_ action: @escaping () -> Void) {
+        if Thread.isMainThread {
+            action()
+        } else {
+            DispatchQueue.main.async(execute: action)
+        }
+    }
+
     func start() {
         let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
         let callback: CGEventTapCallBack = { proxy, type, event, refcon in
@@ -62,15 +70,21 @@ final class FnKeyMonitor {
         if type == .flagsChanged {
             if fnNow && !isFnDown {
                 isFnDown = true
-                onFnDown?()
+                dispatchAction { [weak self] in
+                    self?.onFnDown?()
+                }
             } else if !fnNow && isFnDown {
                 isFnDown = false
-                onFnUp?()
+                dispatchAction { [weak self] in
+                    self?.onFnUp?()
+                }
             }
         } else if type == .keyDown, fnNow {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if keyCode == 49 {
-                onFnSpace?()
+                dispatchAction { [weak self] in
+                    self?.onFnSpace?()
+                }
                 return nil
             }
         }
