@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 
 final class FnKeyMonitor {
@@ -7,6 +8,8 @@ final class FnKeyMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
     private var isFnDown = false
 
     private func dispatchAction(_ action: @escaping () -> Void) {
@@ -18,11 +21,38 @@ final class FnKeyMonitor {
     }
 
     func start() {
+        guard eventTap == nil, globalMonitor == nil, localMonitor == nil else { return }
+        if !startEventTap() {
+            startFallbackMonitors()
+        }
+    }
+
+    func stop() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+        }
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+        }
+        runLoopSource = nil
+        eventTap = nil
+        globalMonitor = nil
+        localMonitor = nil
+        isFnDown = false
+    }
+
+    private func startEventTap() -> Bool {
         let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
         let callback: CGEventTapCallBack = { proxy, type, event, refcon in
-            guard let refcon else { return Unmanaged.passRetained(event) }
+            guard let refcon else { return Unmanaged.passUnretained(event) }
             let monitor = Unmanaged<FnKeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
-            return monitor.handleEvent(proxy: proxy, type: type, event: event)
+            return monitor.handleEventTap(proxy: proxy, type: type, event: event)
         }
 
         eventTap = CGEvent.tapCreate(
@@ -34,54 +64,44 @@ final class FnKeyMonitor {
             userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         )
 
-        guard let eventTap else { return }
+        guard let eventTap else { return false }
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
         if let source = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: eventTap, enable: true)
+        return true
     }
 
-    func stop() {
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
+    private func startFallbackMonitors() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            self?.handleFallbackEvent(event)
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+            guard let self else { return event }
+            let shouldSwallow = self.handleFallbackEvent(event)
+            return shouldSwallow ? nil : event
         }
-        runLoopSource = nil
-        eventTap = nil
-        isFnDown = false
     }
 
-    private func handleEvent(
+    private func handleEventTap(
         proxy: CGEventTapProxy,
         type: CGEventType,
         event: CGEvent
     ) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
-        let flags = event.flags
-        let fnNow = flags.contains(.maskSecondaryFn)
+        let fnNow = event.flags.contains(.maskSecondaryFn)
 
         if type == .flagsChanged {
-            if fnNow && !isFnDown {
-                isFnDown = true
-                dispatchAction { [weak self] in
-                    self?.onFnDown?()
-                }
-            } else if !fnNow && isFnDown {
-                isFnDown = false
-                dispatchAction { [weak self] in
-                    self?.onFnUp?()
-                }
-            }
+            handleFnState(fnNow: fnNow)
         } else if type == .keyDown, fnNow {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == 49 {
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            if keyCode == 49, !isRepeat {
                 dispatchAction { [weak self] in
                     self?.onFnSpace?()
                 }
@@ -89,6 +109,38 @@ final class FnKeyMonitor {
             }
         }
 
-        return Unmanaged.passRetained(event)
+        return Unmanaged.passUnretained(event)
+    }
+
+    @discardableResult
+    private func handleFallbackEvent(_ event: NSEvent) -> Bool {
+        let fnNow = event.modifierFlags.contains(.function)
+        switch event.type {
+        case .flagsChanged:
+            handleFnState(fnNow: fnNow)
+        case .keyDown:
+            guard fnNow, event.keyCode == 49, !event.isARepeat else { return false }
+            dispatchAction { [weak self] in
+                self?.onFnSpace?()
+            }
+            return true
+        default:
+            break
+        }
+        return false
+    }
+
+    private func handleFnState(fnNow: Bool) {
+        if fnNow && !isFnDown {
+            isFnDown = true
+            dispatchAction { [weak self] in
+                self?.onFnDown?()
+            }
+        } else if !fnNow && isFnDown {
+            isFnDown = false
+            dispatchAction { [weak self] in
+                self?.onFnUp?()
+            }
+        }
     }
 }
