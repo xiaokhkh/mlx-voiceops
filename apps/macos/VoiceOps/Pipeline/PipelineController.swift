@@ -30,16 +30,28 @@ final class PipelineController: ObservableObject {
     private var targetApp: NSRunningApplication?
     private var activeSession: ActiveSession?
     private var chunkQueue: [URL] = []
-    private var isProcessingChunk = false
     private var endRequested = false
     private let chunkDuration: TimeInterval = 1.5
+    private var manualTask: Task<Void, Never>?
+    private var polishTask: Task<Void, Never>?
+    private var streamingStartTask: Task<Void, Never>?
+    private var streamingStopTask: Task<Void, Never>?
+    private var chunkTask: Task<Void, Never>?
 
     func toggleRecord() {
         switch state {
         case .idle, .ready, .error:
-            Task { await startRecording() }
+            guard manualTask == nil else { return }
+            manualTask = Task { @MainActor [weak self] in
+                await self?.startRecording()
+                self?.manualTask = nil
+            }
         case .recording:
-            Task { await stopAndProcess() }
+            guard manualTask == nil else { return }
+            manualTask = Task { @MainActor [weak self] in
+                await self?.stopAndProcess()
+                self?.manualTask = nil
+            }
         default:
             break
         }
@@ -49,8 +61,17 @@ final class PipelineController: ObservableObject {
         if case .recording = state {
             audio.cancel()
         }
+        manualTask?.cancel()
+        polishTask?.cancel()
+        streamingStartTask?.cancel()
+        streamingStopTask?.cancel()
+        chunkTask?.cancel()
+        manualTask = nil
+        polishTask = nil
+        streamingStartTask = nil
+        streamingStopTask = nil
+        chunkTask = nil
         chunkQueue.removeAll()
-        isProcessingChunk = false
         endRequested = false
         activeSession = nil
         transcript = ""
@@ -80,19 +101,35 @@ final class PipelineController: ObservableObject {
     }
 
     func startStreaming() {
-        Task { await startStreamingSession() }
+        guard streamingStartTask == nil else { return }
+        streamingStartTask = Task { @MainActor [weak self] in
+            await self?.startStreamingSession()
+            self?.streamingStartTask = nil
+        }
     }
 
     func stopStreaming() {
-        Task { await stopStreamingSession() }
+        guard streamingStopTask == nil else { return }
+        streamingStopTask = Task { @MainActor [weak self] in
+            await self?.stopStreamingSession()
+            self?.streamingStopTask = nil
+        }
     }
 
     func startPolishRecording() {
-        Task { await startPolishSession() }
+        guard polishTask == nil else { return }
+        polishTask = Task { @MainActor [weak self] in
+            await self?.startPolishSession()
+            self?.polishTask = nil
+        }
     }
 
     func stopPolishRecording() {
-        Task { await stopPolishSession() }
+        guard polishTask == nil else { return }
+        polishTask = Task { @MainActor [weak self] in
+            await self?.stopPolishSession()
+            self?.polishTask = nil
+        }
     }
 
     private func startRecording() async {
@@ -188,7 +225,7 @@ final class PipelineController: ObservableObject {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             guard let self else { return }
-            if self.endRequested && !self.isProcessingChunk && self.chunkQueue.isEmpty {
+            if self.endRequested, self.chunkTask == nil, self.chunkQueue.isEmpty {
                 self.finishStreaming()
             }
         }
@@ -203,30 +240,31 @@ final class PipelineController: ObservableObject {
 
     private func enqueueChunk(_ url: URL) {
         chunkQueue.append(url)
-        if !isProcessingChunk {
-            Task { await processNextChunk() }
+        if chunkTask == nil {
+            chunkTask = Task { @MainActor [weak self] in
+                await self?.processChunkQueue()
+                self?.chunkTask = nil
+            }
         }
     }
 
-    private func processNextChunk() async {
-        guard !chunkQueue.isEmpty else {
-            isProcessingChunk = false
-            if endRequested {
-                finishStreaming()
+    private func processChunkQueue() async {
+        while !chunkQueue.isEmpty {
+            let url = chunkQueue.removeFirst()
+            do {
+                let text = try await asr.transcribe(wavURL: url)
+                try? FileManager.default.removeItem(at: url)
+                await appendStreamingText(text)
+            } catch {
+                state = .error("Streaming failed: \(error)")
+                chunkQueue.removeAll()
+                endRequested = false
+                break
             }
-            return
         }
-
-        isProcessingChunk = true
-        let url = chunkQueue.removeFirst()
-        do {
-            let text = try await asr.transcribe(wavURL: url)
-            try? FileManager.default.removeItem(at: url)
-            await appendStreamingText(text)
-        } catch {
-            state = .error("Streaming failed: \(error)")
+        if endRequested {
+            finishStreaming()
         }
-        await processNextChunk()
     }
 
     private func appendStreamingText(_ text: String) async {

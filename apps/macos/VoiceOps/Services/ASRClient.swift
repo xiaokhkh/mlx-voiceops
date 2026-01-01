@@ -2,9 +2,14 @@ import Foundation
 
 final class ASRClient {
     private let baseURL = URL(string: "http://127.0.0.1:8765")!
+    private let session: URLSession
 
     struct Resp: Decodable {
         let text: String
+    }
+
+    init(session: URLSession = ASRClient.makeSession()) {
+        self.session = session
     }
 
     func transcribe(wavURL: URL) async throws -> String {
@@ -25,10 +30,17 @@ final class ASRClient {
 
         req.httpBody = body
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw NSError(domain: "ASRClient", code: 1)
         }
         return try JSONDecoder().decode(Resp.self, from: data).text
+    }
+
+    private static func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 120
+        return URLSession(configuration: config)
     }
 }
