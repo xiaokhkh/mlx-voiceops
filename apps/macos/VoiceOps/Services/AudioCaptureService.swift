@@ -11,13 +11,15 @@ final class AudioCaptureService {
     private var onChunk: ((URL) -> Void)?
     private var streamingEnabled = false
     private var targetFormat: AVAudioFormat?
+    private var inputFormat: AVAudioFormat?
+    private var converter: AVAudioConverter?
 
     func start(
         streaming: Bool,
         chunkDuration: TimeInterval = 1.5,
         onChunk: ((URL) -> Void)? = nil
     ) throws {
-        let format = AVAudioFormat(
+        let target = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16_000,
             channels: 1,
@@ -28,9 +30,9 @@ final class AudioCaptureService {
             .appendingPathComponent("voiceops_\(UUID().uuidString).wav")
         let file = try AVAudioFile(
             forWriting: url,
-            settings: format.settings,
-            commonFormat: format.commonFormat,
-            interleaved: format.isInterleaved
+            settings: target.settings,
+            commonFormat: target.commonFormat,
+            interleaved: target.isInterleaved
         )
 
         outputURL = url
@@ -38,12 +40,19 @@ final class AudioCaptureService {
         streamingEnabled = streaming
         self.onChunk = onChunk
         chunkFrames = 0
-        chunkFrameLimit = AVAudioFramePosition(format.sampleRate * chunkDuration)
-        targetFormat = format
+        chunkFrameLimit = AVAudioFramePosition(target.sampleRate * chunkDuration)
+        targetFormat = target
 
         let input = engine.inputNode
+        let hwFormat = input.inputFormat(forBus: 0)
+        inputFormat = hwFormat
+        if hwFormat.sampleRate != target.sampleRate || hwFormat.channelCount != target.channelCount {
+            converter = AVAudioConverter(from: hwFormat, to: target)
+        } else {
+            converter = nil
+        }
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weak self] buffer, _ in
             self?.handleBuffer(buffer)
         }
 
@@ -60,6 +69,8 @@ final class AudioCaptureService {
         flushChunk()
         outputFile = nil
         outputURL = nil
+        converter = nil
+        inputFormat = nil
         return url
     }
 
@@ -73,16 +84,42 @@ final class AudioCaptureService {
         outputURL = nil
         chunkFile = nil
         chunkFrames = 0
+        converter = nil
+        inputFormat = nil
     }
 
     private func handleBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let format = targetFormat else { return }
 
-        let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameCapacity)!
-        copy.frameLength = buffer.frameLength
-        if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
-            let bytes = Int(buffer.frameLength) * MemoryLayout<Float>.size
-            memcpy(dst[0], src[0], bytes)
+        let copy: AVAudioPCMBuffer
+        if let converter {
+            let ratio = format.sampleRate / (inputFormat?.sampleRate ?? format.sampleRate)
+            let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+            let outBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: outFrames)!
+            var error: NSError?
+            var consumed = false
+            let status = converter.convert(to: outBuffer, error: &error) { _, outStatus in
+                if consumed {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                consumed = true
+                outStatus.pointee = .haveData
+                return buffer
+            }
+            if status == .haveData {
+                copy = outBuffer
+            } else {
+                return
+            }
+        } else {
+            let outBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameCapacity)!
+            outBuffer.frameLength = buffer.frameLength
+            if let src = buffer.floatChannelData, let dst = outBuffer.floatChannelData {
+                let bytes = Int(buffer.frameLength) * MemoryLayout<Float>.size
+                memcpy(dst[0], src[0], bytes)
+            }
+            copy = outBuffer
         }
 
         audioQueue.async { [weak self] in
