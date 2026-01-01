@@ -7,36 +7,56 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0BE738DCC442D41002456044 /* OfflineLLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506F54642912F445479D3F7C /* OfflineLLMClient.swift */; };
 		1029DB080383895A09D20A04 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B265BFC1D9E2942C4B41157 /* Assets.xcassets */; };
 		25F70221A7BF9CB7E37CA200 /* ASRClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E07980A21D00AAD3F21087 /* ASRClient.swift */; };
+		32A4B8912775BB1F3B9FAC5A /* FastASRClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE797DC9A2513ED177F2A7F /* FastASRClient.swift */; };
 		35CD0385DFDA5CD0C27F5726 /* Mode.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62C325AF728EBDCC2BA0469 /* Mode.swift */; };
 		40B69BAFD8B91196A1798211 /* OverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEBDACDD528EC35DC2585341 /* OverlayPanel.swift */; };
+		449C8247C3B5F49700A3656F /* FnSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3161165938F653DCDE60F238 /* FnSessionController.swift */; };
 		550E4A86CFB9951329CE797E /* HotKeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362C14BC8CA14CC117DBD29F /* HotKeyService.swift */; };
 		6EBDE0309E407C3316C8A630 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C913B040730154033BE623 /* OverlayView.swift */; };
+		87710849CEB3A66E70F84654 /* PreviewPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701FF705CAC488E48D63B007 /* PreviewPanel.swift */; };
 		96A3FF332A86E0E5DCFC6A4B /* PipelineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DEB9D511A0072BA0F762A78 /* PipelineController.swift */; };
+		AAAA3171A2FA636E95630EE0 /* PreviewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B427B467924F82C18261CFB /* PreviewModel.swift */; };
 		BA4E2F22B05DD2EC0DBBA13F /* AppMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = B970B93884207D30F57EA30E /* AppMain.swift */; };
+		BE9AEBBC28458CABDE915BF0 /* CodexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42533B4B80598A0615B7C95E /* CodexClient.swift */; };
 		C0F4FBA191EAD5787597F63F /* Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBC051C45D226CE70A63109 /* Permissions.swift */; };
+		C41F4B9AA5E044CF2A275BC0 /* TextStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D57F00751A65B115B24C5D4 /* TextStabilizer.swift */; };
 		D3440F588CEFA153F4AA21E8 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E92C442DB27102F499F7E6 /* AudioCaptureService.swift */; };
+		D475445982227CA439F70464 /* FocusInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF20785C9D7F331F84EEAD2B /* FocusInjector.swift */; };
+		E5401A720E00D4FAF227A942 /* LLMRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A6147F3235591061E702C5 /* LLMRouter.swift */; };
 		EC878AA977FA623C4EF188FD /* FnKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80E9B37C69260A267888469 /* FnKeyMonitor.swift */; };
 		EDCCF18CBC11CFEFB03F4A68 /* InputInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FD7D2691611C2FA3E837BAA /* InputInjector.swift */; };
 		EDE998B031BBA4A469370198 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB0D2B51C2CAD31E36E2ABC /* LLMClient.swift */; };
+		F1261E36233BF186D5A8FC9A /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94431E21EE9DD50FB959EB16 /* PreviewView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0DEB9D511A0072BA0F762A78 /* PipelineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineController.swift; sourceTree = "<group>"; };
+		22A6147F3235591061E702C5 /* LLMRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMRouter.swift; sourceTree = "<group>"; };
 		28E224505818686A6DED2E24 /* VoiceOps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceOps.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2D57F00751A65B115B24C5D4 /* TextStabilizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextStabilizer.swift; sourceTree = "<group>"; };
+		3161165938F653DCDE60F238 /* FnSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnSessionController.swift; sourceTree = "<group>"; };
 		362C14BC8CA14CC117DBD29F /* HotKeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyService.swift; sourceTree = "<group>"; };
+		42533B4B80598A0615B7C95E /* CodexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexClient.swift; sourceTree = "<group>"; };
 		4AB0D2B51C2CAD31E36E2ABC /* LLMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMClient.swift; sourceTree = "<group>"; };
+		506F54642912F445479D3F7C /* OfflineLLMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineLLMClient.swift; sourceTree = "<group>"; };
 		59C913B040730154033BE623 /* OverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayView.swift; sourceTree = "<group>"; };
+		6B427B467924F82C18261CFB /* PreviewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewModel.swift; sourceTree = "<group>"; };
+		701FF705CAC488E48D63B007 /* PreviewPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewPanel.swift; sourceTree = "<group>"; };
 		7FD7D2691611C2FA3E837BAA /* InputInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputInjector.swift; sourceTree = "<group>"; };
 		86E92C442DB27102F499F7E6 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
 		8B265BFC1D9E2942C4B41157 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		93E07980A21D00AAD3F21087 /* ASRClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASRClient.swift; sourceTree = "<group>"; };
+		94431E21EE9DD50FB959EB16 /* PreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewView.swift; sourceTree = "<group>"; };
 		95471A0FBE9BA112F119067F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AEBC051C45D226CE70A63109 /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
 		B62C325AF728EBDCC2BA0469 /* Mode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mode.swift; sourceTree = "<group>"; };
 		B970B93884207D30F57EA30E /* AppMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMain.swift; sourceTree = "<group>"; };
 		BEBDACDD528EC35DC2585341 /* OverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPanel.swift; sourceTree = "<group>"; };
+		CF20785C9D7F331F84EEAD2B /* FocusInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusInjector.swift; sourceTree = "<group>"; };
+		DEE797DC9A2513ED177F2A7F /* FastASRClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastASRClient.swift; sourceTree = "<group>"; };
 		E80E9B37C69260A267888469 /* FnKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnKeyMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -54,11 +74,18 @@
 			children = (
 				93E07980A21D00AAD3F21087 /* ASRClient.swift */,
 				86E92C442DB27102F499F7E6 /* AudioCaptureService.swift */,
+				42533B4B80598A0615B7C95E /* CodexClient.swift */,
+				DEE797DC9A2513ED177F2A7F /* FastASRClient.swift */,
 				E80E9B37C69260A267888469 /* FnKeyMonitor.swift */,
+				3161165938F653DCDE60F238 /* FnSessionController.swift */,
+				CF20785C9D7F331F84EEAD2B /* FocusInjector.swift */,
 				362C14BC8CA14CC117DBD29F /* HotKeyService.swift */,
 				7FD7D2691611C2FA3E837BAA /* InputInjector.swift */,
 				4AB0D2B51C2CAD31E36E2ABC /* LLMClient.swift */,
+				22A6147F3235591061E702C5 /* LLMRouter.swift */,
+				506F54642912F445479D3F7C /* OfflineLLMClient.swift */,
 				AEBC051C45D226CE70A63109 /* Permissions.swift */,
+				2D57F00751A65B115B24C5D4 /* TextStabilizer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -98,6 +125,9 @@
 			children = (
 				BEBDACDD528EC35DC2585341 /* OverlayPanel.swift */,
 				59C913B040730154033BE623 /* OverlayView.swift */,
+				6B427B467924F82C18261CFB /* PreviewModel.swift */,
+				701FF705CAC488E48D63B007 /* PreviewPanel.swift */,
+				94431E21EE9DD50FB959EB16 /* PreviewView.swift */,
 			);
 			path = Overlay;
 			sourceTree = "<group>";
@@ -178,15 +208,25 @@
 				25F70221A7BF9CB7E37CA200 /* ASRClient.swift in Sources */,
 				BA4E2F22B05DD2EC0DBBA13F /* AppMain.swift in Sources */,
 				D3440F588CEFA153F4AA21E8 /* AudioCaptureService.swift in Sources */,
+				BE9AEBBC28458CABDE915BF0 /* CodexClient.swift in Sources */,
+				32A4B8912775BB1F3B9FAC5A /* FastASRClient.swift in Sources */,
 				EC878AA977FA623C4EF188FD /* FnKeyMonitor.swift in Sources */,
+				449C8247C3B5F49700A3656F /* FnSessionController.swift in Sources */,
+				D475445982227CA439F70464 /* FocusInjector.swift in Sources */,
 				550E4A86CFB9951329CE797E /* HotKeyService.swift in Sources */,
 				EDCCF18CBC11CFEFB03F4A68 /* InputInjector.swift in Sources */,
 				EDE998B031BBA4A469370198 /* LLMClient.swift in Sources */,
+				E5401A720E00D4FAF227A942 /* LLMRouter.swift in Sources */,
 				35CD0385DFDA5CD0C27F5726 /* Mode.swift in Sources */,
+				0BE738DCC442D41002456044 /* OfflineLLMClient.swift in Sources */,
 				40B69BAFD8B91196A1798211 /* OverlayPanel.swift in Sources */,
 				6EBDE0309E407C3316C8A630 /* OverlayView.swift in Sources */,
 				C0F4FBA191EAD5787597F63F /* Permissions.swift in Sources */,
 				96A3FF332A86E0E5DCFC6A4B /* PipelineController.swift in Sources */,
+				AAAA3171A2FA636E95630EE0 /* PreviewModel.swift in Sources */,
+				87710849CEB3A66E70F84654 /* PreviewPanel.swift in Sources */,
+				F1261E36233BF186D5A8FC9A /* PreviewView.swift in Sources */,
+				C41F4B9AA5E044CF2A275BC0 /* TextStabilizer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -262,6 +302,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/Build/$(CONFIGURATION)";
 				INFOPLIST_FILE = VoiceOps/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -335,6 +376,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(PROJECT_DIR)/Build/$(CONFIGURATION)";
 				INFOPLIST_FILE = VoiceOps/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

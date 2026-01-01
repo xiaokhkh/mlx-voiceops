@@ -2,11 +2,11 @@ import Cocoa
 import ApplicationServices
 
 final class InputInjector {
-    func insertViaPaste(_ text: String) -> Bool {
+    func insertViaPaste(_ text: String, restoreClipboard: Bool = true) -> Bool {
         guard Permissions.hasAccessibility() else { return false }
 
         let pb = NSPasteboard.general
-        let backup = pb.pasteboardItems ?? []
+        let backup = restoreClipboard ? (pb.pasteboardItems ?? []) : []
         pb.clearContents()
         pb.setString(text, forType: .string)
 
@@ -23,9 +23,11 @@ final class InputInjector {
         post(kV, down: true, flags: [.maskCommand])
         post(kV, down: false, flags: [.maskCommand])
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            pb.clearContents()
-            for item in backup { pb.writeObjects([item]) }
+        if restoreClipboard {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                pb.clearContents()
+                for item in backup { pb.writeObjects([item]) }
+            }
         }
         return true
     }

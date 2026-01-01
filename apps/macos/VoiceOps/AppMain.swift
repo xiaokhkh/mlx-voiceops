@@ -15,56 +15,67 @@ struct VoiceOpsApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private enum FnSession {
-        case none
-        case pending
-        case streaming
-        case polish
-    }
-
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let statusIdleTitle = "konh"
     private var statusItem: NSStatusItem?
     private var panel: OverlayPanel?
+    private var previewPanel: PreviewPanel?
+    private let previewModel = PreviewModel()
     private var hotKey: HotKeyService?
     private let fnMonitor = FnKeyMonitor()
-    private var fnSession: FnSession = .none
-    private var fnWorkItem: DispatchWorkItem?
+    private let fnSession = FnSessionController()
+    private var fnHoldActive = false
     private var cancellables = Set<AnyCancellable>()
 
     private let pipeline = PipelineController()
-    private var toggleItem = NSMenuItem()
-    private var insertItem = NSMenuItem()
+    private var accessItem = NSMenuItem()
+    private var revealItem = NSMenuItem()
+    private var accessStatusItem = NSMenuItem()
+    private var accessPathItem = NSMenuItem()
+    private var accessBundleItem = NSMenuItem()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         setupOverlay()
+        setupPreviewPanel()
         setupHotKey()
         setupFnMonitor()
         bindPipeline()
     }
 
     private func setupStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.title = "VO"
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.title = statusIdleTitle
 
         let menu = NSMenu()
-        toggleItem = NSMenuItem(title: "Start Recording", action: #selector(toggleRecord), keyEquivalent: "")
-        insertItem = NSMenuItem(title: "Insert", action: #selector(insertText), keyEquivalent: "")
+        accessItem = NSMenuItem(title: "Open Accessibility Settings", action: #selector(openAccessibilitySettings), keyEquivalent: "")
+        revealItem = NSMenuItem(title: "Reveal App in Finder", action: #selector(revealApp), keyEquivalent: "")
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
 
-        toggleItem.target = self
-        insertItem.target = self
+        accessStatusItem = NSMenuItem(title: "Accessibility: unknown", action: nil, keyEquivalent: "")
+        accessPathItem = NSMenuItem(title: "Path: unknown", action: nil, keyEquivalent: "")
+        accessBundleItem = NSMenuItem(title: "Bundle: unknown", action: nil, keyEquivalent: "")
+
+        accessItem.target = self
+        revealItem.target = self
         quitItem.target = self
 
-        insertItem.isEnabled = false
+        accessStatusItem.isEnabled = false
+        accessPathItem.isEnabled = false
+        accessBundleItem.isEnabled = false
 
-        menu.addItem(toggleItem)
-        menu.addItem(insertItem)
+        menu.addItem(accessStatusItem)
+        menu.addItem(accessPathItem)
+        menu.addItem(accessBundleItem)
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(accessItem)
+        menu.addItem(revealItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         item.menu = menu
+        menu.delegate = self
         statusItem = item
     }
 
@@ -79,6 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func setupPreviewPanel() {
+        let view = PreviewView(model: previewModel)
+        previewPanel = PreviewPanel(rootView: view)
+    }
+
     private func setupHotKey() {
         do {
             hotKey = try HotKeyService(keyCode: 49, modifiers: UInt32(optionKey)) { [weak self] in
@@ -90,58 +106,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupFnMonitor() {
-        Permissions.requestAccessibilityIfNeeded()
         fnMonitor.onFnDown = { [weak self] in
             self?.handleFnDown()
         }
         fnMonitor.onFnUp = { [weak self] in
             self?.handleFnUp()
         }
-        fnMonitor.onFnSpace = { [weak self] in
-            self?.handleFnSpace()
+        fnSession.onIndicatorChange = { [weak self] state in
+            self?.updateStatusIndicator(state)
+        }
+        fnSession.onPreviewText = { [weak self] text in
+            self?.previewModel.text = text
         }
         fnMonitor.start()
     }
 
     private func handleFnDown() {
-        guard fnSession == .none else { return }
-        fnSession = .pending
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.fnSession == .pending else { return }
-            self.fnSession = .streaming
-            self.pipeline.startStreaming()
-        }
-        fnWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-    }
-
-    private func handleFnSpace() {
-        if fnSession == .pending {
-            fnWorkItem?.cancel()
-        }
-        guard fnSession != .polish else { return }
-        fnSession = .polish
-        pipeline.startPolishRecording()
+        guard !fnHoldActive else { return }
+        fnHoldActive = true
+        panel?.hide()
+        previewModel.text = ""
+        previewModel.state = .recording
+        previewPanel?.show()
+        Permissions.requestAccessibilityIfNeeded()
+        updateAccessStatusItems()
+        Task { await fnSession.startSession() }
     }
 
     private func handleFnUp() {
-        fnWorkItem?.cancel()
-        switch fnSession {
-        case .streaming:
-            pipeline.stopStreaming()
-        case .polish:
-            pipeline.stopPolishRecording()
-        case .pending, .none:
-            break
+        guard fnHoldActive else { return }
+        fnHoldActive = false
+        fnSession.endSession()
+    }
+
+    private func updateStatusIndicator(_ state: FnSessionController.IndicatorState) {
+        switch state {
+        case .idle:
+            previewModel.state = .idle
+            if !fnHoldActive {
+                previewPanel?.hide()
+            }
+        case .recording:
+            previewModel.state = .recording
+        case .processing:
+            previewModel.state = .processing
         }
-        fnSession = .none
     }
 
     private func bindPipeline() {
         pipeline.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
-                self?.updateMenu(for: state)
+                if self?.fnHoldActive == true {
+                    self?.panel?.hide()
+                    return
+                }
                 switch state {
                 case .idle:
                     self?.panel?.hide()
@@ -152,30 +171,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
     }
 
-    private func updateMenu(for state: PipelineController.State) {
-        switch state {
-        case .recording:
-            toggleItem.title = "Stop Recording"
-        default:
-            toggleItem.title = "Start Recording"
-        }
-
-        if case .ready = state {
-            insertItem.isEnabled = true
-        } else {
-            insertItem.isEnabled = false
-        }
-    }
-
-    @objc private func toggleRecord() {
-        pipeline.toggleRecord()
-    }
-
-    @objc private func insertText() {
-        pipeline.insertToFocusedApp()
-    }
-
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func revealApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        updateAccessStatusItems()
+    }
+
+    private func updateAccessStatusItems() {
+        let info = Permissions.accessibilityStatusInfo()
+        accessStatusItem.title = "Accessibility: " + (info.trusted ? "trusted" : "denied")
+        accessPathItem.title = "Path: \(info.path)"
+        accessBundleItem.title = "Bundle: \(info.bundleID)"
     }
 }

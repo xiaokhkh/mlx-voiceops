@@ -11,8 +11,8 @@
 ## macOS app
 
 - Launch app and confirm menu bar icon appears.
-- Hold Fn to start streaming; release to stop.
-- Hold Fn+Space to record and polish; release to insert.
-- Verify overlay shows state transitions: Recording -> Transcribing -> Generating -> Ready.
-- Press Enter in overlay to insert output; if Accessibility is disabled, verify clipboard is set.
-- Press Esc to cancel and hide overlay.
+- Focus a text field in another app (Slack/Chrome/VSCode).
+- Hold Fn to start streaming; verify text appears incrementally in the focused field.
+- Release Fn to stop; verify final text is appended.
+- Confirm no overlay or focus change occurs during Fn hold.
+- If Accessibility is disabled, verify text is copied to clipboard and no injection occurs.

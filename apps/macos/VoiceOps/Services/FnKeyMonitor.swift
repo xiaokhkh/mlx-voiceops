@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 
 final class FnKeyMonitor {
     var onFnDown: (() -> Void)?
@@ -11,6 +12,7 @@ final class FnKeyMonitor {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var isFnDown = false
+    private let fnKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
 
     private func dispatchAction(_ action: @escaping () -> Void) {
         if Thread.isMainThread {
@@ -97,11 +99,14 @@ final class FnKeyMonitor {
         let fnNow = event.flags.contains(.maskSecondaryFn)
 
         if type == .flagsChanged {
-            handleFnState(fnNow: fnNow)
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == Int64(fnKeyCode) {
+                handleFnState(fnNow: fnNow)
+            }
         } else if type == .keyDown, fnNow {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            if keyCode == 49, !isRepeat {
+            if keyCode == 49, !isRepeat, onFnSpace != nil {
                 dispatchAction { [weak self] in
                     self?.onFnSpace?()
                 }
@@ -117,9 +122,12 @@ final class FnKeyMonitor {
         let fnNow = event.modifierFlags.contains(.function)
         switch event.type {
         case .flagsChanged:
-            handleFnState(fnNow: fnNow)
+            if event.keyCode == fnKeyCode {
+                handleFnState(fnNow: fnNow)
+            }
         case .keyDown:
             guard fnNow, event.keyCode == 49, !event.isARepeat else { return false }
+            guard onFnSpace != nil else { return false }
             dispatchAction { [weak self] in
                 self?.onFnSpace?()
             }

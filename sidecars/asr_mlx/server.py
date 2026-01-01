@@ -72,7 +72,12 @@ async def transcribe(file: UploadFile = File(...)):
         tmp_path = fp.name
 
     try:
-        res = _model.generate(tmp_path, verbose=False)
+        try:
+            res = _model.generate(tmp_path, verbose=False)
+        except ValueError as exc:
+            if "Input is too short" in str(exc):
+                return TranscribeResp(text="")
+            raise
         text = (getattr(res, "text", "") or "").strip()
         if not text and getattr(res, "segments", None):
             try:

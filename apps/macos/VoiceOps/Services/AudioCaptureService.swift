@@ -1,23 +1,28 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 
-final class AudioCaptureService {
-    private let engine = AVAudioEngine()
+final class AudioCaptureService: @unchecked Sendable {
+    private var engine = AVAudioEngine()
     private let audioQueue = DispatchQueue(label: "voiceops.audio.queue")
     private var outputURL: URL?
     private var outputFile: AVAudioFile?
-    private var chunkFile: AVAudioFile?
     private var chunkFrames: AVAudioFramePosition = 0
     private var chunkFrameLimit: AVAudioFramePosition = 0
-    private var onChunk: ((URL) -> Void)?
+    private var onTick: (() -> Void)?
+    private var onChunk: ((Data, AVAudioFrameCount) -> Void)?
+    private var storeStreamingBuffers = true
     private var streamingEnabled = false
     private var targetFormat: AVAudioFormat?
     private var inputFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
+    private var streamingBuffers: [AVAudioPCMBuffer] = []
+    private var streamingTotalFrames: AVAudioFramePosition = 0
 
     func start(
         streaming: Bool,
         chunkDuration: TimeInterval = 1.5,
-        onChunk: ((URL) -> Void)? = nil
+        onTick: (() -> Void)? = nil,
+        onChunk: ((Data, AVAudioFrameCount) -> Void)? = nil,
+        storeBuffers: Bool = true
     ) throws {
         let target = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -38,21 +43,29 @@ final class AudioCaptureService {
         outputURL = url
         outputFile = file
         streamingEnabled = streaming
+        self.onTick = onTick
         self.onChunk = onChunk
+        storeStreamingBuffers = storeBuffers
         chunkFrames = 0
         chunkFrameLimit = AVAudioFramePosition(target.sampleRate * chunkDuration)
         targetFormat = target
+        if streamingEnabled {
+            streamingBuffers = []
+            streamingTotalFrames = 0
+        } else {
+            resetStreamingState()
+        }
+
+        engine.stop()
+        engine.reset()
+        engine = AVAudioEngine()
+
+        inputFormat = nil
+        converter = nil
 
         let input = engine.inputNode
-        let hwFormat = input.inputFormat(forBus: 0)
-        inputFormat = hwFormat
-        if hwFormat.sampleRate != target.sampleRate || hwFormat.channelCount != target.channelCount {
-            converter = AVAudioConverter(from: hwFormat, to: target)
-        } else {
-            converter = nil
-        }
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             self?.handleBuffer(buffer)
         }
 
@@ -66,12 +79,70 @@ final class AudioCaptureService {
         }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        flushChunk()
         outputFile = nil
         outputURL = nil
         converter = nil
         inputFormat = nil
         return url
+    }
+
+    func stopStreaming() throws {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        outputFile = nil
+        outputURL = nil
+        converter = nil
+        inputFormat = nil
+    }
+
+    func snapshotStreamingAudio() async throws -> (URL, AVAudioFramePosition)? {
+        guard streamingEnabled, let format = targetFormat else { return nil }
+
+        let snapshot: ([AVAudioPCMBuffer], AVAudioFramePosition) = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<([AVAudioPCMBuffer], AVAudioFramePosition), Error>) in
+            audioQueue.async { [weak self] in
+                guard let self else {
+                    cont.resume(throwing: NSError(domain: "AudioCaptureService", code: 2))
+                    return
+                }
+                cont.resume(returning: (self.streamingBuffers, self.streamingTotalFrames))
+            }
+        }
+
+        let buffers = snapshot.0
+        let totalFrames = snapshot.1
+        guard !buffers.isEmpty else { return nil }
+
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<(URL, AVAudioFramePosition), Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let url = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("voiceops_stream_\(UUID().uuidString).wav")
+                    let file = try AVAudioFile(
+                        forWriting: url,
+                        settings: format.settings,
+                        commonFormat: format.commonFormat,
+                        interleaved: format.isInterleaved
+                    )
+                    for buffer in buffers {
+                        try file.write(from: buffer)
+                    }
+                    cont.resume(returning: (url, totalFrames))
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func resetStreamingState() {
+        streamingEnabled = false
+        onTick = nil
+        onChunk = nil
+        storeStreamingBuffers = true
+        chunkFrames = 0
+        chunkFrameLimit = 0
+        streamingBuffers = []
+        streamingTotalFrames = 0
     }
 
     func cancel() {
@@ -82,18 +153,20 @@ final class AudioCaptureService {
         }
         outputFile = nil
         outputURL = nil
-        chunkFile = nil
         chunkFrames = 0
         converter = nil
         inputFormat = nil
+        resetStreamingState()
     }
 
     private func handleBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let format = targetFormat else { return }
+        guard buffer.frameLength > 0 else { return }
+        refreshConverterIfNeeded(input: buffer.format, target: format)
 
         let copy: AVAudioPCMBuffer
         if let converter {
-            let ratio = format.sampleRate / (inputFormat?.sampleRate ?? format.sampleRate)
+            let ratio = format.sampleRate / buffer.format.sampleRate
             let outFrames = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
             let outBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: outFrames)!
             var error: NSError?
@@ -127,34 +200,45 @@ final class AudioCaptureService {
             try? self.outputFile?.write(from: copy)
 
             guard self.streamingEnabled else { return }
-            if self.chunkFile == nil {
-                self.chunkFile = try? AVAudioFile(
-                    forWriting: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("voiceops_chunk_\(UUID().uuidString).wav"),
-                    settings: format.settings,
-                    commonFormat: format.commonFormat,
-                    interleaved: format.isInterleaved
-                )
-                self.chunkFrames = 0
+            if self.storeStreamingBuffers {
+                self.streamingBuffers.append(copy)
             }
-            if let chunkFile = self.chunkFile {
-                try? chunkFile.write(from: copy)
-                self.chunkFrames += AVAudioFramePosition(copy.frameLength)
-                if self.chunkFrames >= self.chunkFrameLimit {
-                    let url = chunkFile.url
-                    self.chunkFile = nil
-                    self.chunkFrames = 0
-                    self.onChunk?(url)
+            self.streamingTotalFrames += AVAudioFramePosition(copy.frameLength)
+            self.chunkFrames += AVAudioFramePosition(copy.frameLength)
+
+            if let onChunk, let channel = copy.floatChannelData {
+                let frames = Int(copy.frameLength)
+                if frames > 0 {
+                    let byteCount = frames * MemoryLayout<Float>.size
+                    let data = Data(bytes: channel[0], count: byteCount)
+                    DispatchQueue.main.async {
+                        onChunk(data, copy.frameLength)
+                    }
+                }
+            }
+
+            if self.chunkFrames >= self.chunkFrameLimit {
+                self.chunkFrames = 0
+                DispatchQueue.main.async { [weak self] in
+                    self?.onTick?()
                 }
             }
         }
     }
 
-    private func flushChunk() {
-        guard streamingEnabled, let chunkFile = chunkFile else { return }
-        let url = chunkFile.url
-        self.chunkFile = nil
-        self.chunkFrames = 0
-        onChunk?(url)
+    private func refreshConverterIfNeeded(input: AVAudioFormat, target: AVAudioFormat) {
+        if let current = inputFormat,
+           current.sampleRate == input.sampleRate,
+           current.channelCount == input.channelCount,
+           current.commonFormat == input.commonFormat {
+            return
+        }
+
+        inputFormat = input
+        if input.sampleRate != target.sampleRate || input.channelCount != target.channelCount || input.commonFormat != target.commonFormat {
+            converter = AVAudioConverter(from: input, to: target)
+        } else {
+            converter = nil
+        }
     }
 }
