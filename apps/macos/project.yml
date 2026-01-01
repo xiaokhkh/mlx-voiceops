@@ -1,0 +1,23 @@
+name: VoiceOps
+options:
+  bundleIdPrefix: com.voiceops
+settings:
+  MARKETING_VERSION: 0.1.0
+  CURRENT_PROJECT_VERSION: 1
+
+targets:
+  VoiceOps:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: VoiceOps
+    resources:
+      - path: VoiceOps/Assets.xcassets
+    info:
+      path: VoiceOps/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.voiceops.VoiceOps
+        INFOPLIST_FILE: VoiceOps/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

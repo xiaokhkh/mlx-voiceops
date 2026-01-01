@@ -48,11 +48,15 @@ python server.py
 
 ## macOS app
 
-1. In Xcode, create a new macOS App project named `VoiceOps`.
-2. Set the app to run as a menu bar accessory (AppDelegate in `AppMain.swift`).
-3. Drag the files from `apps/macos/VoiceOps/` into the Xcode project target.
-4. Add `NSMicrophoneUsageDescription` to `Info.plist`.
-5. Build and run.
+1. Open `apps/macos/VoiceOps.xcodeproj` in Xcode.
+2. Build and run.
+
+If you modify the Xcode project definition, regenerate with:
+
+```
+cd apps/macos
+xcodegen generate --spec project.yml
+```
 
 Hotkey: `Option + Space` (toggle record).
 
