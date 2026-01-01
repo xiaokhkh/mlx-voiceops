@@ -22,5 +22,10 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoiceOps needs microphone access to record audio.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
