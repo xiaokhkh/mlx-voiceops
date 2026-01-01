@@ -1,13 +1,57 @@
 import os
+import sys
 import tempfile
+from pathlib import Path
+
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 import uvicorn
 
-from mlx_audio.stt.utils import load_model
-from mlx_audio.stt.generate import generate_transcription
-
 MODEL_ID = os.getenv("ASR_MODEL_ID", "mlx-community/GLM-ASR-Nano-2512-8bit")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
+
+def _ensure_py39_compat() -> None:
+    if sys.version_info >= (3, 10):
+        return
+
+    try:
+        import site
+
+        candidates = []
+        if hasattr(site, "getsitepackages"):
+            candidates.extend(site.getsitepackages())
+        candidates.append(site.getusersitepackages())
+
+        for base in candidates:
+            if not base:
+                continue
+            dsp_path = Path(base) / "mlx_audio" / "dsp.py"
+            if not dsp_path.exists():
+                continue
+            text = dsp_path.read_text(encoding="utf-8")
+            if "from __future__ import annotations" in text:
+                return
+            parts = text.splitlines()
+            if parts and parts[0].startswith('"""'):
+                end = 1
+                while end < len(parts) and not parts[end].startswith('"""'):
+                    end += 1
+                end = min(end + 1, len(parts))
+                parts.insert(end, "")
+                parts.insert(end + 1, "from __future__ import annotations")
+            else:
+                parts.insert(0, "from __future__ import annotations")
+            dsp_path.write_text("\n".join(parts) + "\n", encoding="utf-8")
+            return
+    except Exception:
+        pass
+
+
+_ensure_py39_compat()
+
+from mlx_audio.stt.utils import load_model
 
 app = FastAPI(title="ASR MLX Sidecar")
 
@@ -28,8 +72,13 @@ async def transcribe(file: UploadFile = File(...)):
         tmp_path = fp.name
 
     try:
-        res = generate_transcription(model=_model, audio_path=tmp_path, verbose=False)
-        text = (res.text or "").strip()
+        res = _model.generate(tmp_path, verbose=False)
+        text = (getattr(res, "text", "") or "").strip()
+        if not text and getattr(res, "segments", None):
+            try:
+                text = " ".join(seg.get("text", "").strip() for seg in res.segments).strip()
+            except Exception:
+                text = ""
         return TranscribeResp(text=text)
     finally:
         try:

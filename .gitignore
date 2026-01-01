@@ -3,5 +3,6 @@
 *.xcuserdata/
 DerivedData/
 .venv/
+.wheels/
 __pycache__/
 *.pyc

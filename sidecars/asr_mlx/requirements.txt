@@ -1,4 +1,5 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-mlx-audio==0.1.0
-soundfile==0.12.1
+mlx-audio[stt]==0.2.9
+soundfile==0.13.1
+python-multipart==0.0.20

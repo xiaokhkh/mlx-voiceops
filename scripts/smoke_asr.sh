@@ -19,7 +19,7 @@ with wave.open(path, "wb") as wf:
     wf.writeframes(samples)
 PY
 
-curl -s -X POST \
+NO_PROXY=127.0.0.1,localhost curl -s -X POST \
   -F "file=@${TMP_WAV}" \
   http://127.0.0.1:8765/v1/asr/transcribe
 
