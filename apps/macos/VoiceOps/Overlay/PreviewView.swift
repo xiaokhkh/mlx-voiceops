@@ -15,6 +15,7 @@ struct PreviewView: View {
             Text(displayText())
                 .font(.system(size: 14))
                 .foregroundColor(.primary)
+                .truncationMode(.head)
                 .lineLimit(4)
         }
         .padding(12)
