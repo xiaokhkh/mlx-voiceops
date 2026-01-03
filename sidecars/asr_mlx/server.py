@@ -6,6 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 import uvicorn
+import threading
+import numpy as np
+import soundfile as sf
 
 MODEL_ID = os.getenv("ASR_MODEL_ID", "mlx-community/GLM-ASR-Nano-2512-8bit")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -60,8 +63,75 @@ _model = load_model(MODEL_ID)
 print("[asr] model ready")
 
 
+def _warm_up_model() -> None:
+    try:
+        sr = 16_000
+        samples = np.zeros(sr, dtype="float32")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+            path = fp.name
+        sf.write(path, samples, sr)
+        try:
+            _model.generate(path, verbose=False)
+        except Exception:
+            pass
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+threading.Thread(target=_warm_up_model, daemon=True).start()
+
+
 class TranscribeResp(BaseModel):
     text: str
+
+
+def _trim_silence(path: str, top_db: float = 40.0) -> int:
+    try:
+        audio, sr = sf.read(path, dtype="float32")
+    except Exception:
+        return -1
+
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if audio.size == 0:
+        return 0
+
+    frame = 1024
+    hop = 256
+    if audio.size < frame:
+        return int(audio.size)
+
+    rms = []
+    for i in range(0, audio.size - frame + 1, hop):
+        chunk = audio[i : i + frame]
+        rms.append(np.sqrt(np.mean(chunk * chunk)))
+
+    if not rms:
+        return 0
+    rms = np.array(rms)
+    max_rms = float(rms.max())
+    if max_rms <= 0:
+        return 0
+
+    threshold = max_rms * (10 ** (-top_db / 20))
+    idx = np.where(rms > threshold)[0]
+    if idx.size == 0:
+        return 0
+
+    pad = int(sr * 0.05)
+    start = max(0, int(idx[0] * hop - pad))
+    end = min(audio.size, int(idx[-1] * hop + frame + pad))
+    trimmed = audio[start:end]
+    if trimmed.size == 0:
+        return 0
+
+    if trimmed.size != audio.size:
+        sf.write(path, trimmed, sr)
+    return int(trimmed.size)
 
 
 @app.post("/v1/asr/transcribe", response_model=TranscribeResp)
@@ -72,6 +142,10 @@ async def transcribe(file: UploadFile = File(...)):
         tmp_path = fp.name
 
     try:
+        trimmed_len = _trim_silence(tmp_path)
+        if 0 <= trimmed_len < 400:
+            return TranscribeResp(text="")
+
         try:
             res = _model.generate(tmp_path, verbose=False)
         except ValueError as exc:

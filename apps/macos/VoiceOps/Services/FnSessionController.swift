@@ -62,6 +62,9 @@ final class FnSessionController {
             return
         }
         Permissions.requestAccessibilityIfNeeded()
+        Task { [weak self] in
+            await self?.llmRouter.warmUp()
+        }
 
         lastFrameCount = 0
         fastSessionID = nil
@@ -82,7 +85,8 @@ final class FnSessionController {
                 onChunk: { [weak self] data, frames in
                     self?.handleFastChunk(data: data, frames: frames)
                 },
-                storeBuffers: false
+                storeBuffers: true,
+                writeToFile: false
             )
             state = .streaming
             onIndicatorChange?(.recording)
@@ -105,15 +109,15 @@ final class FnSessionController {
         stopFastSession()
 
         do {
-            let wavURL = try audio.stop()
-            if lastFrameCount < minFramesForASR {
-                try? FileManager.default.removeItem(at: wavURL)
+            let (wavData, totalFrames) = try audio.stopAndGetWavData()
+            let frameCount = max(lastFrameCount, totalFrames)
+            if frameCount < minFramesForASR {
                 print("[asr_request_end] empty")
                 finishSession()
                 return
             }
             Task { @MainActor [weak self] in
-                await self?.runFinalASR(wavURL: wavURL)
+                await self?.runFinalASR(wavData: wavData)
             }
         } catch {
             print("[fn_session] audio_stop_failed \(error)")
@@ -122,7 +126,7 @@ final class FnSessionController {
         }
     }
 
-    private func runFinalASR(wavURL: URL) async {
+    private func runFinalASR(wavData: Data) async {
         guard !isFinalProcessing else { return }
         isFinalProcessing = true
         let totalStart = CFAbsoluteTimeGetCurrent()
@@ -134,13 +138,14 @@ final class FnSessionController {
         print("[asr_request_start]")
         do {
             let asrStart = CFAbsoluteTimeGetCurrent()
-            let text = try await asr.transcribe(wavURL: wavURL)
+            let text = try await asr.transcribe(wavData: wavData)
             let asrMs = Int((CFAbsoluteTimeGetCurrent() - asrStart) * 1000)
-            try? FileManager.default.removeItem(at: wavURL)
             print("[asr_request_end] len=\(text.count)")
 
             guard !text.isEmpty else { return }
+            let llmStart = CFAbsoluteTimeGetCurrent()
             let routed = await llmRouter.route(text: text)
+            let llmMs = Int((CFAbsoluteTimeGetCurrent() - llmStart) * 1000)
             let finalText = routed.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !finalText.isEmpty else { return }
             let injectStart = CFAbsoluteTimeGetCurrent()
@@ -155,7 +160,7 @@ final class FnSessionController {
             let injectMs = Int((CFAbsoluteTimeGetCurrent() - injectStart) * 1000)
             print("[inject_called] ok=\(didInject)")
             let totalMs = Int((CFAbsoluteTimeGetCurrent() - totalStart) * 1000)
-            print("[perf] asr=\(asrMs)ms inject=\(injectMs)ms total=\(totalMs)ms")
+            print("[perf] asr=\(asrMs)ms llm=\(llmMs)ms inject=\(injectMs)ms total=\(totalMs)ms")
             if !didInject, let focusPID, currentPID == focusPID {
                 let fallback = injector.inject(text, restoreClipboard: false)
                 print("[inject_fallback] ok=\(fallback)")

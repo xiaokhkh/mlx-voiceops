@@ -13,6 +13,11 @@ final class ASRClient {
     }
 
     func transcribe(wavURL: URL) async throws -> String {
+        let wavData = try Data(contentsOf: wavURL)
+        return try await transcribe(wavData: wavData)
+    }
+
+    func transcribe(wavData: Data) async throws -> String {
         var req = URLRequest(url: baseURL.appendingPathComponent("/v1/asr/transcribe"))
         req.httpMethod = "POST"
 
@@ -25,7 +30,7 @@ final class ASRClient {
         add("--\(boundary)\r\n")
         add("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
         add("Content-Type: audio/wav\r\n\r\n")
-        body.append(try Data(contentsOf: wavURL))
+        body.append(wavData)
         add("\r\n--\(boundary)--\r\n")
 
         req.httpBody = body

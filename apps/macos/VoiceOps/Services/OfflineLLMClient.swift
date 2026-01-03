@@ -5,6 +5,14 @@ final class OfflineLLMClient {
         case invalidResponse
     }
 
+    private enum WarmUpState {
+        case idle
+        case running
+        case done
+    }
+
+    private static var warmUpState: WarmUpState = .idle
+
     private struct Message: Encodable, Decodable {
         let role: String
         let content: String
@@ -30,6 +38,19 @@ final class OfflineLLMClient {
     ) {
         self.model = model
         self.session = session
+    }
+
+    func warmUp() async {
+        if Self.warmUpState != .idle {
+            return
+        }
+        Self.warmUpState = .running
+        do {
+            _ = try await translate(text: "Hello")
+            Self.warmUpState = .done
+        } catch {
+            Self.warmUpState = .idle
+        }
     }
 
     func translate(text: String) async throws -> String {
@@ -79,10 +100,11 @@ final class OfflineLLMClient {
 You are a translation module inside a programming-focused voice input tool.
 
 Your job:
-- Translate ALL input to English.
-- Preserve meaning exactly. Do not invent facts, commands, logs, or technical conclusions.
+- Translate ALL input to English using a formal, concise engineering tone.
+- Preserve meaning. Do not invent facts, commands, logs, or technical conclusions.
 - Keep code identifiers, file paths, URLs, and CLI commands unchanged.
 - Keep numbers, versions, and punctuation intact when possible.
+- Normalize temporal references to be consistent. If multiple different weekdays appear, standardize them to avoid conflicts (e.g., use a single consistent reference such as "this week").
 - Return only the translated text. No extra commentary.
 
 Runtime info (offline LLM):
@@ -95,7 +117,7 @@ Runtime info (offline LLM):
 
     private static func userPrompt(text: String) -> String {
         return """
-Translate the following text to English. If it is already English, return it unchanged.
+Translate the following text to English in a formal engineering style. If it is already English, keep it and apply the same normalization rules.
 
 Text:
 <<<

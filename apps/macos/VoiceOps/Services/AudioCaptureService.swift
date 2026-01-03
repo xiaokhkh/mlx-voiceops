@@ -11,6 +11,7 @@ final class AudioCaptureService: @unchecked Sendable {
     private var onChunk: ((Data, AVAudioFrameCount) -> Void)?
     private var storeStreamingBuffers = true
     private var streamingEnabled = false
+    private var bufferingEnabled = false
     private var targetFormat: AVAudioFormat?
     private var inputFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
@@ -22,7 +23,8 @@ final class AudioCaptureService: @unchecked Sendable {
         chunkDuration: TimeInterval = 1.5,
         onTick: (() -> Void)? = nil,
         onChunk: ((Data, AVAudioFrameCount) -> Void)? = nil,
-        storeBuffers: Bool = true
+        storeBuffers: Bool = true,
+        writeToFile: Bool = true
     ) throws {
         let target = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -31,30 +33,31 @@ final class AudioCaptureService: @unchecked Sendable {
             interleaved: false
         )!
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("voiceops_\(UUID().uuidString).wav")
-        let file = try AVAudioFile(
-            forWriting: url,
-            settings: target.settings,
-            commonFormat: target.commonFormat,
-            interleaved: target.isInterleaved
-        )
-
-        outputURL = url
-        outputFile = file
+        if writeToFile {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("voiceops_\(UUID().uuidString).wav")
+            let file = try AVAudioFile(
+                forWriting: url,
+                settings: target.settings,
+                commonFormat: target.commonFormat,
+                interleaved: target.isInterleaved
+            )
+            outputURL = url
+            outputFile = file
+        } else {
+            outputURL = nil
+            outputFile = nil
+        }
         streamingEnabled = streaming
         self.onTick = onTick
         self.onChunk = onChunk
         storeStreamingBuffers = storeBuffers
+        bufferingEnabled = storeBuffers
         chunkFrames = 0
         chunkFrameLimit = AVAudioFramePosition(target.sampleRate * chunkDuration)
         targetFormat = target
-        if streamingEnabled {
-            streamingBuffers = []
-            streamingTotalFrames = 0
-        } else {
-            resetStreamingState()
-        }
+        streamingBuffers = []
+        streamingTotalFrames = 0
 
         engine.stop()
         engine.reset()
@@ -84,6 +87,31 @@ final class AudioCaptureService: @unchecked Sendable {
         converter = nil
         inputFormat = nil
         return url
+    }
+
+    func stopAndGetWavData() throws -> (Data, AVAudioFramePosition) {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        outputFile = nil
+        outputURL = nil
+        converter = nil
+        inputFormat = nil
+
+        guard bufferingEnabled, let format = targetFormat else {
+            throw NSError(domain: "AudioCaptureService", code: 2)
+        }
+
+        let snapshot: ([AVAudioPCMBuffer], AVAudioFramePosition) = audioQueue.sync {
+            return (self.streamingBuffers, self.streamingTotalFrames)
+        }
+        let buffers = snapshot.0
+        let totalFrames = snapshot.1
+        guard !buffers.isEmpty else {
+            throw NSError(domain: "AudioCaptureService", code: 3)
+        }
+
+        let wavData = buildWavData(buffers: buffers, format: format)
+        return (wavData, totalFrames)
     }
 
     func stopStreaming() throws {
@@ -139,6 +167,7 @@ final class AudioCaptureService: @unchecked Sendable {
         onTick = nil
         onChunk = nil
         storeStreamingBuffers = true
+        bufferingEnabled = false
         chunkFrames = 0
         chunkFrameLimit = 0
         streamingBuffers = []
@@ -199,11 +228,14 @@ final class AudioCaptureService: @unchecked Sendable {
             guard let self else { return }
             try? self.outputFile?.write(from: copy)
 
-            guard self.streamingEnabled else { return }
-            if self.storeStreamingBuffers {
-                self.streamingBuffers.append(copy)
+            if self.bufferingEnabled {
+                if self.storeStreamingBuffers {
+                    self.streamingBuffers.append(copy)
+                }
+                self.streamingTotalFrames += AVAudioFramePosition(copy.frameLength)
             }
-            self.streamingTotalFrames += AVAudioFramePosition(copy.frameLength)
+
+            guard self.streamingEnabled else { return }
             self.chunkFrames += AVAudioFramePosition(copy.frameLength)
 
             if let onChunk, let channel = copy.floatChannelData {
@@ -224,6 +256,49 @@ final class AudioCaptureService: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private func buildWavData(buffers: [AVAudioPCMBuffer], format: AVAudioFormat) -> Data {
+        let channels = Int(format.channelCount)
+        let sampleRate = Int(format.sampleRate)
+        let bitsPerSample = 32
+        let bytesPerSample = bitsPerSample / 8
+
+        var dataSize = 0
+        for buffer in buffers {
+            dataSize += Int(buffer.frameLength) * bytesPerSample
+        }
+
+        var data = Data()
+        data.reserveCapacity(44 + dataSize)
+
+        func append<T: FixedWidthInteger>(_ value: T) {
+            var v = value.littleEndian
+            data.append(Data(bytes: &v, count: MemoryLayout<T>.size))
+        }
+
+        data.append("RIFF".data(using: .ascii)!)
+        append(UInt32(36 + dataSize))
+        data.append("WAVE".data(using: .ascii)!)
+        data.append("fmt ".data(using: .ascii)!)
+        append(UInt32(16))
+        append(UInt16(3)) // IEEE float
+        append(UInt16(channels))
+        append(UInt32(sampleRate))
+        append(UInt32(sampleRate * channels * bytesPerSample))
+        append(UInt16(channels * bytesPerSample))
+        append(UInt16(bitsPerSample))
+        data.append("data".data(using: .ascii)!)
+        append(UInt32(dataSize))
+
+        for buffer in buffers {
+            guard let channel = buffer.floatChannelData else { continue }
+            let frames = Int(buffer.frameLength)
+            let byteCount = frames * bytesPerSample
+            data.append(Data(bytes: channel[0], count: byteCount))
+        }
+
+        return data
     }
 
     private func refreshConverterIfNeeded(input: AVAudioFormat, target: AVAudioFormat) {

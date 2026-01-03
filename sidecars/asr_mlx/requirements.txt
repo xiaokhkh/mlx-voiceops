@@ -3,3 +3,4 @@ uvicorn[standard]==0.30.6
 mlx-audio[stt]==0.2.9
 soundfile==0.13.1
 python-multipart==0.0.20
+numpy==1.26.4

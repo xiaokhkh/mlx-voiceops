@@ -22,6 +22,10 @@ final class LLMRouter {
         self.offlineClient = offlineClient
     }
 
+    func warmUp() async {
+        await offlineClient.warmUp()
+    }
+
     func route(text: String) async -> RoutedResult {
         let offlineStart = CFAbsoluteTimeGetCurrent()
         var offlineLatency: Int?
