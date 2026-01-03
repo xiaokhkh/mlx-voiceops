@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File
@@ -136,20 +137,44 @@ def _trim_silence(path: str, top_db: float = 40.0) -> int:
 
 @app.post("/v1/asr/transcribe", response_model=TranscribeResp)
 async def transcribe(file: UploadFile = File(...)):
+    t0 = time.perf_counter()
     suffix = ".wav" if file.filename.endswith(".wav") else ".wav"
+    data = await file.read()
+    t1 = time.perf_counter()
+    byte_len = len(data)
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as fp:
-        fp.write(await file.read())
+        fp.write(data)
         tmp_path = fp.name
+    t2 = time.perf_counter()
 
     try:
         trimmed_len = _trim_silence(tmp_path)
+        t3 = time.perf_counter()
         if 0 <= trimmed_len < 400:
+            total_ms = int((time.perf_counter() - t0) * 1000)
+            recv_ms = int((t1 - t0) * 1000)
+            write_ms = int((t2 - t1) * 1000)
+            trim_ms = int((t3 - t2) * 1000)
+            print(
+                f"[asr_perf] bytes={byte_len} recv_ms={recv_ms} write_ms={write_ms} "
+                f"trim_ms={trim_ms} infer_ms=0 total_ms={total_ms} trimmed={trimmed_len}"
+            )
             return TranscribeResp(text="")
 
         try:
+            t4 = time.perf_counter()
             res = _model.generate(tmp_path, verbose=False)
+            t5 = time.perf_counter()
         except ValueError as exc:
             if "Input is too short" in str(exc):
+                total_ms = int((time.perf_counter() - t0) * 1000)
+                recv_ms = int((t1 - t0) * 1000)
+                write_ms = int((t2 - t1) * 1000)
+                trim_ms = int((t3 - t2) * 1000)
+                print(
+                    f"[asr_perf] bytes={byte_len} recv_ms={recv_ms} write_ms={write_ms} "
+                    f"trim_ms={trim_ms} infer_ms=0 total_ms={total_ms} trimmed={trimmed_len}"
+                )
                 return TranscribeResp(text="")
             raise
         text = (getattr(res, "text", "") or "").strip()
@@ -158,6 +183,15 @@ async def transcribe(file: UploadFile = File(...)):
                 text = " ".join(seg.get("text", "").strip() for seg in res.segments).strip()
             except Exception:
                 text = ""
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        recv_ms = int((t1 - t0) * 1000)
+        write_ms = int((t2 - t1) * 1000)
+        trim_ms = int((t3 - t2) * 1000)
+        infer_ms = int((t5 - t4) * 1000)
+        print(
+            f"[asr_perf] bytes={byte_len} recv_ms={recv_ms} write_ms={write_ms} "
+            f"trim_ms={trim_ms} infer_ms={infer_ms} total_ms={total_ms} trimmed={trimmed_len}"
+        )
         return TranscribeResp(text=text)
     finally:
         try:

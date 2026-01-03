@@ -34,6 +34,10 @@ final class FnSessionController {
     private var fastSessionToken: UUID?
     private var fastTask: Task<Void, Never>?
     private var focusPID: pid_t?
+    private var focusBundleID: String?
+    private var currentSessionID: UUID?
+    private var selectedTextSnapshot: String?
+    private var didRecordVoiceOps = false
     private var fastQueue: [Data] = []
     private var fastProcessing = false
     private var fastAccumulated = Data()
@@ -62,6 +66,8 @@ final class FnSessionController {
             return
         }
         Permissions.requestAccessibilityIfNeeded()
+        currentSessionID = UUID()
+        selectedTextSnapshot = injector.captureSelectedText()
         Task { [weak self] in
             await self?.llmRouter.warmUp()
         }
@@ -71,7 +77,10 @@ final class FnSessionController {
         fastSessionToken = nil
         fastTask?.cancel()
         fastTask = nil
-        focusPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        focusPID = frontmost?.processIdentifier
+        focusBundleID = frontmost?.bundleIdentifier
+        didRecordVoiceOps = false
         fastQueue = []
         fastProcessing = false
         fastAccumulated = Data()
@@ -130,6 +139,7 @@ final class FnSessionController {
         guard !isFinalProcessing else { return }
         isFinalProcessing = true
         let totalStart = CFAbsoluteTimeGetCurrent()
+        let sessionID = currentSessionID
         defer {
             isFinalProcessing = false
             finishSession()
@@ -165,6 +175,18 @@ final class FnSessionController {
                 let fallback = injector.inject(text, restoreClipboard: false)
                 print("[inject_fallback] ok=\(fallback)")
             }
+            if let sessionID, !didRecordVoiceOps {
+                let llmUsed = routed.offlineUsed ? "offline" : "none"
+                ClipboardStore.shared.recordVoiceOpsText(
+                    sessionID: sessionID,
+                    text: finalText,
+                    selectedText: selectedTextSnapshot,
+                    voiceIntent: text,
+                    llmUsed: llmUsed,
+                    appBundleID: focusBundleID
+                )
+                didRecordVoiceOps = true
+            }
         } catch {
             print("[asr_request_end] error=\(error)")
         }
@@ -178,6 +200,10 @@ final class FnSessionController {
         fastTask?.cancel()
         fastTask = nil
         focusPID = nil
+        focusBundleID = nil
+        currentSessionID = nil
+        selectedTextSnapshot = nil
+        didRecordVoiceOps = false
         fastQueue = []
         fastProcessing = false
         fastAccumulated = Data()

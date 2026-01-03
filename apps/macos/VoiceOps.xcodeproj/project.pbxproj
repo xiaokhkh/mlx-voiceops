@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1B2C3D4E5F6010203040506 /* ClipboardItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040506 /* ClipboardItem.swift */; };
+		B1B2C3D4E5F6010203040507 /* ClipboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040507 /* ClipboardStore.swift */; };
+		B1B2C3D4E5F6010203040508 /* ClipboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040508 /* ClipboardObserver.swift */; };
+		B1B2C3D4E5F6010203040509 /* ClipboardHistoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6010203040509 /* ClipboardHistoryViewModel.swift */; };
+		B1B2C3D4E5F601020304050A /* ClipboardHistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601020304050A /* ClipboardHistoryPanel.swift */; };
+		B1B2C3D4E5F601020304050B /* ClipboardHistoryPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601020304050B /* ClipboardHistoryPanelController.swift */; };
+		B1B2C3D4E5F601020304050C /* ClipboardHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601020304050C /* ClipboardHistoryView.swift */; };
+		B1B2C3D4E5F601020304050D /* ClipboardItemRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F601020304050D /* ClipboardItemRowView.swift */; };
 		0BE738DCC442D41002456044 /* OfflineLLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506F54642912F445479D3F7C /* OfflineLLMClient.swift */; };
 		1029DB080383895A09D20A04 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B265BFC1D9E2942C4B41157 /* Assets.xcassets */; };
 		25F70221A7BF9CB7E37CA200 /* ASRClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E07980A21D00AAD3F21087 /* ASRClient.swift */; };
@@ -33,6 +41,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B2C3D4E5F6010203040506 /* ClipboardItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardItem.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010203040507 /* ClipboardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010203040508 /* ClipboardObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardObserver.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6010203040509 /* ClipboardHistoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardHistoryViewModel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F601020304050A /* ClipboardHistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardHistoryPanel.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F601020304050B /* ClipboardHistoryPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardHistoryPanelController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F601020304050C /* ClipboardHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardHistoryView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F601020304050D /* ClipboardItemRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardItemRowView.swift; sourceTree = "<group>"; };
 		0DEB9D511A0072BA0F762A78 /* PipelineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineController.swift; sourceTree = "<group>"; };
 		22A6147F3235591061E702C5 /* LLMRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMRouter.swift; sourceTree = "<group>"; };
 		28E224505818686A6DED2E24 /* VoiceOps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceOps.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -69,6 +85,21 @@
 			path = Pipeline;
 			sourceTree = "<group>";
 		};
+		C1B2C3D4E5F6010203040506 /* Clipboard */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6010203040506 /* ClipboardItem.swift */,
+				A1B2C3D4E5F6010203040507 /* ClipboardStore.swift */,
+				A1B2C3D4E5F6010203040508 /* ClipboardObserver.swift */,
+				A1B2C3D4E5F6010203040509 /* ClipboardHistoryViewModel.swift */,
+				A1B2C3D4E5F601020304050A /* ClipboardHistoryPanel.swift */,
+				A1B2C3D4E5F601020304050B /* ClipboardHistoryPanelController.swift */,
+				A1B2C3D4E5F601020304050C /* ClipboardHistoryView.swift */,
+				A1B2C3D4E5F601020304050D /* ClipboardItemRowView.swift */,
+			);
+			path = Clipboard;
+			sourceTree = "<group>";
+		};
 		390DC23974EF5C6E088180AE /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -103,6 +134,7 @@
 			children = (
 				B970B93884207D30F57EA30E /* AppMain.swift */,
 				8B265BFC1D9E2942C4B41157 /* Assets.xcassets */,
+				C1B2C3D4E5F6010203040506 /* Clipboard */,
 				95471A0FBE9BA112F119067F /* Info.plist */,
 				B4D9711AFF7F8DB6192BC475 /* Models */,
 				E0F07392C398A67BA5D1E7E9 /* Overlay */,
@@ -208,6 +240,14 @@
 				25F70221A7BF9CB7E37CA200 /* ASRClient.swift in Sources */,
 				BA4E2F22B05DD2EC0DBBA13F /* AppMain.swift in Sources */,
 				D3440F588CEFA153F4AA21E8 /* AudioCaptureService.swift in Sources */,
+				B1B2C3D4E5F601020304050A /* ClipboardHistoryPanel.swift in Sources */,
+				B1B2C3D4E5F601020304050B /* ClipboardHistoryPanelController.swift in Sources */,
+				B1B2C3D4E5F601020304050C /* ClipboardHistoryView.swift in Sources */,
+				B1B2C3D4E5F6010203040509 /* ClipboardHistoryViewModel.swift in Sources */,
+				B1B2C3D4E5F601020304050D /* ClipboardItemRowView.swift in Sources */,
+				B1B2C3D4E5F6010203040506 /* ClipboardItem.swift in Sources */,
+				B1B2C3D4E5F6010203040508 /* ClipboardObserver.swift in Sources */,
+				B1B2C3D4E5F6010203040507 /* ClipboardStore.swift in Sources */,
 				BE9AEBBC28458CABDE915BF0 /* CodexClient.swift in Sources */,
 				32A4B8912775BB1F3B9FAC5A /* FastASRClient.swift in Sources */,
 				EC878AA977FA623C4EF188FD /* FnKeyMonitor.swift in Sources */,

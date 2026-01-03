@@ -6,12 +6,14 @@ final class FnKeyMonitor {
     var onFnDown: (() -> Void)?
     var onFnUp: (() -> Void)?
     var onFnSpace: (() -> Void)?
+    var onCmdFnToggle: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var isFnDown = false
+    private var isCmdFnDown = false
     private let fnKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
 
     private func dispatchAction(_ action: @escaping () -> Void) {
@@ -97,11 +99,12 @@ final class FnKeyMonitor {
         }
 
         let fnNow = event.flags.contains(.maskSecondaryFn)
+        let cmdNow = event.flags.contains(.maskCommand)
 
         if type == .flagsChanged {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             if keyCode == Int64(fnKeyCode) {
-                handleFnState(fnNow: fnNow)
+                handleFnState(fnNow: fnNow, cmdNow: cmdNow)
             }
         } else if type == .keyDown, fnNow {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
@@ -120,10 +123,11 @@ final class FnKeyMonitor {
     @discardableResult
     private func handleFallbackEvent(_ event: NSEvent) -> Bool {
         let fnNow = event.modifierFlags.contains(.function)
+        let cmdNow = event.modifierFlags.contains(.command)
         switch event.type {
         case .flagsChanged:
             if event.keyCode == fnKeyCode {
-                handleFnState(fnNow: fnNow)
+                handleFnState(fnNow: fnNow, cmdNow: cmdNow)
             }
         case .keyDown:
             guard fnNow, event.keyCode == 49, !event.isARepeat else { return false }
@@ -138,7 +142,21 @@ final class FnKeyMonitor {
         return false
     }
 
-    private func handleFnState(fnNow: Bool) {
+    private func handleFnState(fnNow: Bool, cmdNow: Bool) {
+        if fnNow, cmdNow, !isFnDown {
+            if !isCmdFnDown {
+                isCmdFnDown = true
+                dispatchAction { [weak self] in
+                    self?.onCmdFnToggle?()
+                }
+            }
+            return
+        }
+
+        if !fnNow, isCmdFnDown {
+            isCmdFnDown = false
+        }
+
         if fnNow && !isFnDown {
             isFnDown = true
             dispatchAction { [weak self] in

@@ -5,6 +5,7 @@ final class InputInjector {
     func insertViaPaste(_ text: String, restoreClipboard: Bool = true) -> Bool {
         guard Permissions.hasAccessibility() else { return false }
 
+        ClipboardObserver.shared.markInternalWrite()
         let pb = NSPasteboard.general
         let backup = restoreClipboard ? (pb.pasteboardItems ?? []) : []
         pb.clearContents()

@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKey: HotKeyService?
     private let fnMonitor = FnKeyMonitor()
     private let fnSession = FnSessionController()
+    private let clipboardObserver = ClipboardObserver.shared
+    private let clipboardPanel = ClipboardHistoryPanelController.shared
     private var fnHoldActive = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -42,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupHotKey()
         setupFnMonitor()
         bindPipeline()
+        clipboardObserver.start()
     }
 
     private func setupStatusItem() {
@@ -112,6 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fnMonitor.onFnUp = { [weak self] in
             self?.handleFnUp()
         }
+        fnMonitor.onCmdFnToggle = { [weak self] in
+            self?.clipboardPanel.toggle()
+        }
         fnSession.onIndicatorChange = { [weak self] state in
             self?.updateStatusIndicator(state)
         }
@@ -124,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handleFnDown() {
         guard !fnHoldActive else { return }
         fnHoldActive = true
+        clipboardPanel.hide()
         panel?.hide()
         previewModel.text = ""
         previewModel.state = .recording
