@@ -6,15 +6,27 @@ final class FnKeyMonitor {
     var onFnDown: (() -> Void)?
     var onFnUp: (() -> Void)?
     var onFnSpace: (() -> Void)?
-    var onCmdFnToggle: (() -> Void)?
+    var onClipboardToggle: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private var isFnDown = false
-    private var isCmdFnDown = false
+    private var isActivationDown = false
+    private var isClipboardDown = false
     private let fnKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
+    private var activationKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
+    private var activationModifiers: UInt32 = 0
+    private var clipboardKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
+    private var clipboardModifiers: UInt32 = UInt32(cmdKey)
+
+    private var activationUsesFn: Bool {
+        activationKeyCode == fnKeyCode && activationModifiers == 0
+    }
+
+    private var clipboardUsesFn: Bool {
+        clipboardKeyCode == fnKeyCode
+    }
 
     private func dispatchAction(_ action: @escaping () -> Void) {
         if Thread.isMainThread {
@@ -25,8 +37,8 @@ final class FnKeyMonitor {
     }
 
     func start() {
-        guard eventTap == nil, globalMonitor == nil, localMonitor == nil else { return }
-        if !startEventTap() {
+        ensureEventTap()
+        if eventTap == nil {
             startFallbackMonitors()
         }
     }
@@ -48,11 +60,33 @@ final class FnKeyMonitor {
         eventTap = nil
         globalMonitor = nil
         localMonitor = nil
-        isFnDown = false
+        isActivationDown = false
+        isClipboardDown = false
+    }
+
+    func updateActivationKey(keyCode: UInt32, modifiers: UInt32) {
+        activationKeyCode = CGKeyCode(keyCode)
+        activationModifiers = modifiers
+        isActivationDown = false
+    }
+
+    func updateClipboardShortcut(keyCode: UInt32, modifiers: UInt32) {
+        clipboardKeyCode = CGKeyCode(keyCode)
+        clipboardModifiers = modifiers
+        isClipboardDown = false
+    }
+
+    func ensureEventTap() {
+        guard eventTap == nil else { return }
+        if !startEventTap() {
+            startFallbackMonitors()
+        }
     }
 
     private func startEventTap() -> Bool {
-        let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
+        let mask = (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
         let callback: CGEventTapCallBack = { proxy, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let monitor = Unmanaged<FnKeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
@@ -78,13 +112,17 @@ final class FnKeyMonitor {
     }
 
     private func startFallbackMonitors() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
-            self?.handleFallbackEvent(event)
+        if globalMonitor == nil {
+            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown, .keyUp]) { [weak self] event in
+                self?.handleFallbackEvent(event)
+            }
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
-            guard let self else { return event }
-            let shouldSwallow = self.handleFallbackEvent(event)
-            return shouldSwallow ? nil : event
+        if localMonitor == nil {
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .keyUp]) { [weak self] event in
+                guard let self else { return event }
+                let shouldSwallow = self.handleFallbackEvent(event)
+                return shouldSwallow ? nil : event
+            }
         }
     }
 
@@ -99,19 +137,58 @@ final class FnKeyMonitor {
         }
 
         let fnNow = event.flags.contains(.maskSecondaryFn)
-        let cmdNow = event.flags.contains(.maskCommand)
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
         if type == .flagsChanged {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == Int64(fnKeyCode) {
-                handleFnState(fnNow: fnNow, cmdNow: cmdNow)
+            if clipboardUsesFn {
+                handleClipboardFnCombo(fnNow: fnNow, flags: event.flags)
             }
-        } else if type == .keyDown, fnNow {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == Int64(fnKeyCode) {
+                if activationUsesFn {
+                    handleFnActivationState(fnNow: fnNow)
+                }
+            }
+        } else if type == .keyDown {
+            if onClipboardToggle != nil, !clipboardUsesFn {
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                if !isRepeat, matchesClipboardShortcut(keyCode: keyCode, flags: event.flags) {
+                    isClipboardDown = true
+                    dispatchAction { [weak self] in
+                        self?.onClipboardToggle?()
+                    }
+                    return nil
+                }
+            }
+            if !activationUsesFn {
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                if !isRepeat, keyCode == Int64(activationKeyCode), matchesActivationModifiers(flags: event.flags) {
+                    if !isActivationDown {
+                        isActivationDown = true
+                        dispatchAction { [weak self] in
+                            self?.onFnDown?()
+                        }
+                    }
+                    return nil
+                }
+            }
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             if keyCode == 49, !isRepeat, onFnSpace != nil {
                 dispatchAction { [weak self] in
                     self?.onFnSpace?()
+                }
+                return nil
+            }
+        } else if type == .keyUp {
+            if !clipboardUsesFn, isClipboardDown, keyCode == Int64(clipboardKeyCode) {
+                isClipboardDown = false
+                return nil
+            }
+            if !activationUsesFn, keyCode == Int64(activationKeyCode) {
+                if isActivationDown {
+                    isActivationDown = false
+                    dispatchAction { [weak self] in
+                        self?.onFnUp?()
+                    }
                 }
                 return nil
             }
@@ -123,17 +200,58 @@ final class FnKeyMonitor {
     @discardableResult
     private func handleFallbackEvent(_ event: NSEvent) -> Bool {
         let fnNow = event.modifierFlags.contains(.function)
-        let cmdNow = event.modifierFlags.contains(.command)
         switch event.type {
         case .flagsChanged:
+            if clipboardUsesFn {
+                handleClipboardFnCombo(fnNow: fnNow, flags: event.modifierFlags)
+            }
             if event.keyCode == fnKeyCode {
-                handleFnState(fnNow: fnNow, cmdNow: cmdNow)
+                if activationUsesFn {
+                    handleFnActivationState(fnNow: fnNow)
+                }
             }
         case .keyDown:
+            if onClipboardToggle != nil, !clipboardUsesFn, !event.isARepeat,
+               matchesClipboardShortcut(keyCode: event.keyCode, flags: event.modifierFlags)
+            {
+                isClipboardDown = true
+                dispatchAction { [weak self] in
+                    self?.onClipboardToggle?()
+                }
+                return true
+            }
+            if !activationUsesFn,
+               !event.isARepeat,
+               event.keyCode == activationKeyCode,
+               matchesActivationModifiers(flags: event.modifierFlags)
+            {
+                if !isActivationDown {
+                    isActivationDown = true
+                    dispatchAction { [weak self] in
+                        self?.onFnDown?()
+                    }
+                }
+                return true
+            }
             guard fnNow, event.keyCode == 49, !event.isARepeat else { return false }
             guard onFnSpace != nil else { return false }
             dispatchAction { [weak self] in
                 self?.onFnSpace?()
+            }
+            return true
+        case .keyUp:
+            if !clipboardUsesFn, isClipboardDown, event.keyCode == clipboardKeyCode {
+                isClipboardDown = false
+                return true
+            }
+            if !activationUsesFn, event.keyCode == activationKeyCode {
+                if isActivationDown {
+                    isActivationDown = false
+                    dispatchAction { [weak self] in
+                        self?.onFnUp?()
+                    }
+                }
+                return true
             }
             return true
         default:
@@ -142,31 +260,97 @@ final class FnKeyMonitor {
         return false
     }
 
-    private func handleFnState(fnNow: Bool, cmdNow: Bool) {
-        if fnNow, cmdNow, !isFnDown {
-            if !isCmdFnDown {
-                isCmdFnDown = true
-                dispatchAction { [weak self] in
-                    self?.onCmdFnToggle?()
-                }
+    private func handleClipboardFnCombo(fnNow: Bool, flags: CGEventFlags) {
+        guard clipboardUsesFn, onClipboardToggle != nil else { return }
+        let comboActive = fnNow && effectiveModifiers(from: flags) == clipboardModifiers
+        if comboActive && !isClipboardDown {
+            isClipboardDown = true
+            dispatchAction { [weak self] in
+                self?.onClipboardToggle?()
             }
             return
         }
-
-        if !fnNow, isCmdFnDown {
-            isCmdFnDown = false
+        if !comboActive && isClipboardDown {
+            isClipboardDown = false
         }
+    }
 
-        if fnNow && !isFnDown {
-            isFnDown = true
+    private func handleClipboardFnCombo(fnNow: Bool, flags: NSEvent.ModifierFlags) {
+        guard clipboardUsesFn, onClipboardToggle != nil else { return }
+        let comboActive = fnNow && effectiveModifiers(from: flags) == clipboardModifiers
+        if comboActive && !isClipboardDown {
+            isClipboardDown = true
+            dispatchAction { [weak self] in
+                self?.onClipboardToggle?()
+            }
+            return
+        }
+        if !comboActive && isClipboardDown {
+            isClipboardDown = false
+        }
+    }
+
+    private func handleFnActivationState(fnNow: Bool) {
+        if fnNow && !isActivationDown {
+            isActivationDown = true
             dispatchAction { [weak self] in
                 self?.onFnDown?()
             }
-        } else if !fnNow && isFnDown {
-            isFnDown = false
+        } else if !fnNow && isActivationDown {
+            isActivationDown = false
             dispatchAction { [weak self] in
                 self?.onFnUp?()
             }
         }
+    }
+
+    private func matchesActivationModifiers(flags: CGEventFlags) -> Bool {
+        effectiveModifiers(from: flags) == activationModifiers
+    }
+
+    private func matchesActivationModifiers(flags: NSEvent.ModifierFlags) -> Bool {
+        effectiveModifiers(from: flags) == activationModifiers
+    }
+
+    private func matchesClipboardShortcut(keyCode: Int64, flags: CGEventFlags) -> Bool {
+        keyCode == Int64(clipboardKeyCode) && effectiveModifiers(from: flags) == clipboardModifiers
+    }
+
+    private func matchesClipboardShortcut(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        keyCode == clipboardKeyCode && effectiveModifiers(from: flags) == clipboardModifiers
+    }
+
+    private func effectiveModifiers(from flags: CGEventFlags) -> UInt32 {
+        var modifiers: UInt32 = 0
+        if flags.contains(.maskCommand) {
+            modifiers |= UInt32(cmdKey)
+        }
+        if flags.contains(.maskAlternate) {
+            modifiers |= UInt32(optionKey)
+        }
+        if flags.contains(.maskControl) {
+            modifiers |= UInt32(controlKey)
+        }
+        if flags.contains(.maskShift) {
+            modifiers |= UInt32(shiftKey)
+        }
+        return modifiers
+    }
+
+    private func effectiveModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var modifiers: UInt32 = 0
+        if flags.contains(.command) {
+            modifiers |= UInt32(cmdKey)
+        }
+        if flags.contains(.option) {
+            modifiers |= UInt32(optionKey)
+        }
+        if flags.contains(.control) {
+            modifiers |= UInt32(controlKey)
+        }
+        if flags.contains(.shift) {
+            modifiers |= UInt32(shiftKey)
+        }
+        return modifiers
     }
 }

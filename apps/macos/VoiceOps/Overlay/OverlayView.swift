@@ -2,6 +2,10 @@ import SwiftUI
 
 struct OverlayView: View {
     @EnvironmentObject private var pipeline: PipelineController
+    @AppStorage(ActivationKeyPreference.keyCodeDefaultsKey) private var activationKeyCode = Int(ActivationKeyPreference.defaultValue.keyCode)
+    @AppStorage(ActivationKeyPreference.modifiersDefaultsKey) private var activationModifiers = Int(ActivationKeyPreference.defaultValue.modifiers)
+    @AppStorage(HotKeyPreference.keyCodeDefaultsKey) private var clipboardKeyCode = Int(HotKeyPreference.defaultValue.keyCode)
+    @AppStorage(HotKeyPreference.modifiersDefaultsKey) private var clipboardModifiers = Int(HotKeyPreference.defaultValue.modifiers)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -81,9 +85,9 @@ struct OverlayView: View {
     private var statusHint: String {
         switch pipeline.state {
         case .idle:
-            return "Fn / Fn+Space"
+            return "Hold \(activationDisplay) / \(clipboardDisplay)"
         case .recording:
-            return "Release Fn to stop"
+            return "Release \(activationDisplay) to stop"
         case .transcribing, .generating:
             return "Working..."
         case .ready:
@@ -100,5 +104,20 @@ struct OverlayView: View {
         default:
             return "Record"
         }
+    }
+
+    private var activationDisplay: String {
+        ActivationKeyPreference(
+            keyCode: UInt32(activationKeyCode),
+            modifiers: UInt32(activationModifiers)
+        ).displayString
+    }
+
+    private var clipboardDisplay: String {
+        let clipboardPreference = HotKeyPreference(
+            keyCode: UInt32(clipboardKeyCode),
+            modifiers: UInt32(clipboardModifiers)
+        )
+        return (clipboardPreference.isValid ? clipboardPreference : HotKeyPreference.defaultValue).displayString
     }
 }

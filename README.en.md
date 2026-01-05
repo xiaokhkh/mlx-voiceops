@@ -83,10 +83,12 @@ xcodegen generate --spec project.yml
 
 Hotkeys:
 
-- Hold `Fn` to show streaming preview; release to stop and insert the final translated text.
-- `Option + Space` remains as a manual toggle (debug).
+- Hold `Fn` to show streaming preview; release to stop and insert the final translated text. The hold key is customizable in Preferences.
+- Clipboard history hotkey is customizable (default: `Command + Fn`). Configure it from Preferences.
 
 ## Notes
 
 - Accessibility permission is required for injection.
+- Input Monitoring permission is required for global shortcuts.
+- Use Preferences -> Permissions to review and open the required system settings.
 - The preview panel never becomes key, so focus stays in the target app.

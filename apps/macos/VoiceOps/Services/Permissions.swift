@@ -1,9 +1,11 @@
 import ApplicationServices
 import AVFoundation
 import Foundation
+import IOKit.hid
 
 enum Permissions {
     private static var didPromptAccessibility = false
+    private static var didPromptInputMonitoring = false
 
     static func hasAccessibility() -> Bool {
         AXIsProcessTrusted()
@@ -30,6 +32,20 @@ enum Permissions {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    static func hasInputMonitoring() -> Bool {
+        guard #available(macOS 10.15, *) else { return true }
+        return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    }
+
+    static func requestInputMonitoringIfNeeded() {
+        guard #available(macOS 10.15, *) else { return }
+        guard !didPromptInputMonitoring else { return }
+        let status = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+        guard status != kIOHIDAccessTypeGranted else { return }
+        didPromptInputMonitoring = true
+        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+    }
+
     static func requestMicrophoneIfNeeded() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
@@ -43,5 +59,28 @@ enum Permissions {
         default:
             return false
         }
+    }
+
+    static func microphoneStatusLabel() -> String {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return "Allowed"
+        case .denied:
+            return "Denied"
+        case .restricted:
+            return "Restricted"
+        case .notDetermined:
+            return "Not Determined"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    static func hasMicrophoneAccess() -> Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    static func microphoneNeedsRequest() -> Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
     }
 }

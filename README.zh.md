@@ -83,10 +83,12 @@ xcodegen generate --spec project.yml
 
 快捷键：
 
-- 按住 `Fn`：小窗显示流式预览；松开后插入英文翻译结果。
-- `Option + Space`：手动切换录音（调试用）。
+- 按住 `Fn`：小窗显示流式预览；松开后插入英文翻译结果（可在 Preferences 自定义）。
+- 剪切板记录快捷键可自定义（默认 `Command + Fn`），在 Preferences 里设置。
 
 ## 备注
 
 - 需要开启辅助功能（Accessibility）权限才能注入文本。
+- 全局快捷键需要开启输入监控（Input Monitoring）权限。
+- 可在 Preferences -> Permissions 中查看权限状态并跳转系统设置。
 - 小窗不会抢焦点，输入焦点始终在目标应用。
