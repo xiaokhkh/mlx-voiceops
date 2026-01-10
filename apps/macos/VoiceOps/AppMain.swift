@@ -23,13 +23,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let previewModel = PreviewModel()
     private var clipboardHotKeyPreference = HotKeyPreference.defaultValue
     private var activationPreference = ActivationKeyPreference.defaultValue
+    private var translateHotKeyPreference = TranslateHotKeyPreference.defaultValue
     private var hotKeyDefaultsObserver: Any?
     private var settingsWindowController: NSWindowController?
     private let fnMonitor = FnKeyMonitor()
     private let fnSession = FnSessionController()
     private let clipboardObserver = ClipboardObserver.shared
     private let clipboardPanel = ClipboardHistoryPanelController.shared
+    private let translatePanel = SelectionTranslationPanelController.shared
     private let sidecarLauncher = SidecarLauncher.shared
+    private let focusInjector = FocusInjector()
     private var fnHoldActive = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -95,6 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fnMonitor.updateActivationKey(keyCode: activationPreference.keyCode, modifiers: activationPreference.modifiers)
         clipboardHotKeyPreference = HotKeyPreference.load()
         fnMonitor.updateClipboardShortcut(keyCode: clipboardHotKeyPreference.keyCode, modifiers: clipboardHotKeyPreference.modifiers)
+        translateHotKeyPreference = TranslateHotKeyPreference.load()
+        fnMonitor.updateTranslateShortcut(
+            keyCode: translateHotKeyPreference.keyCode,
+            modifiers: translateHotKeyPreference.modifiers
+        )
         hotKeyDefaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: UserDefaults.standard,
@@ -103,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 self?.reloadActivationKeyIfNeeded()
                 self?.reloadClipboardHotKeyIfNeeded()
+                self?.reloadTranslateHotKeyIfNeeded()
             }
         }
     }
@@ -121,6 +130,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fnMonitor.updateActivationKey(keyCode: latest.keyCode, modifiers: latest.modifiers)
     }
 
+    private func reloadTranslateHotKeyIfNeeded() {
+        let latest = TranslateHotKeyPreference.load()
+        guard latest != translateHotKeyPreference else { return }
+        translateHotKeyPreference = latest
+        fnMonitor.updateTranslateShortcut(keyCode: latest.keyCode, modifiers: latest.modifiers)
+    }
+
     private func setupFnMonitor() {
         fnMonitor.onFnDown = { [weak self] in
             self?.handleFnDown()
@@ -130,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         fnMonitor.onClipboardToggle = { [weak self] in
             self?.clipboardPanel.toggle()
+        }
+        fnMonitor.onTranslateSelection = { [weak self] in
+            self?.handleTranslateSelection()
         }
         fnSession.onIndicatorChange = { [weak self] state in
             self?.updateStatusIndicator(state)
@@ -156,6 +175,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard fnHoldActive else { return }
         fnHoldActive = false
         fnSession.endSession()
+    }
+
+    private func handleTranslateSelection() {
+        clipboardPanel.hide()
+        panel?.hide()
+        Permissions.requestAccessibilityIfNeeded()
+        let selectedText = focusInjector.captureSelectedText()
+        translatePanel.show(text: selectedText)
     }
 
     private func updateStatusIndicator(_ state: FnSessionController.IndicatorState) {
@@ -238,6 +265,8 @@ struct HotKeySettingsView: View {
     @State private var activationModifiers: UInt32
     @State private var clipboardKeyCode: UInt32
     @State private var clipboardModifiers: UInt32
+    @State private var translateKeyCode: UInt32
+    @State private var translateModifiers: UInt32
 
     init() {
         let activation = ActivationKeyPreference.load()
@@ -246,38 +275,63 @@ struct HotKeySettingsView: View {
         let clipboard = HotKeyPreference.load()
         _clipboardKeyCode = State(initialValue: clipboard.keyCode)
         _clipboardModifiers = State(initialValue: clipboard.modifiers)
+        let translate = TranslateHotKeyPreference.load()
+        _translateKeyCode = State(initialValue: translate.keyCode)
+        _translateModifiers = State(initialValue: translate.modifiers)
     }
 
     var body: some View {
-        Form {
-            Section("Activation") {
-                ShortcutRecorderRow(
-                    title: "Hold to record",
-                    subtitle: "Press and hold to start recording. Release to finish.",
-                    requiresModifier: false,
-                    defaultKeyCode: ActivationKeyPreference.defaultValue.keyCode,
-                    defaultModifiers: ActivationKeyPreference.defaultValue.modifiers,
-                    keyCode: $activationKeyCode,
-                    modifiers: $activationModifiers
-                ) { keyCode, modifiers in
-                    ActivationKeyPreference(keyCode: keyCode, modifiers: modifiers).save()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PreferencesHeader(
+                    title: "Shortcuts",
+                    subtitle: "Control how you start recording, search clipboard, and translate selections."
+                )
+
+                SectionCard(title: "Activation", subtitle: "Press and hold to start recording.") {
+                    ShortcutRecorderRow(
+                        title: "Hold to record",
+                        subtitle: "Release to finish and process.",
+                        requiresModifier: false,
+                        defaultKeyCode: ActivationKeyPreference.defaultValue.keyCode,
+                        defaultModifiers: ActivationKeyPreference.defaultValue.modifiers,
+                        keyCode: $activationKeyCode,
+                        modifiers: $activationModifiers
+                    ) { keyCode, modifiers in
+                        ActivationKeyPreference(keyCode: keyCode, modifiers: modifiers).save()
+                    }
+                }
+
+                SectionCard(title: "Clipboard History", subtitle: "Quickly reuse previous clipboard items.") {
+                    ShortcutRecorderRow(
+                        title: "Open clipboard history",
+                        subtitle: "Toggles the clipboard history panel.",
+                        requiresModifier: true,
+                        defaultKeyCode: HotKeyPreference.defaultValue.keyCode,
+                        defaultModifiers: HotKeyPreference.defaultValue.modifiers,
+                        keyCode: $clipboardKeyCode,
+                        modifiers: $clipboardModifiers
+                    ) { keyCode, modifiers in
+                        HotKeyPreference(keyCode: keyCode, modifiers: modifiers).save()
+                    }
+                }
+
+                SectionCard(title: "Selection Translation", subtitle: "Translate selected text via Ollama.") {
+                    ShortcutRecorderRow(
+                        title: "Translate selected text",
+                        subtitle: "Shows translation using the local Ollama model.",
+                        requiresModifier: true,
+                        defaultKeyCode: TranslateHotKeyPreference.defaultValue.keyCode,
+                        defaultModifiers: TranslateHotKeyPreference.defaultValue.modifiers,
+                        keyCode: $translateKeyCode,
+                        modifiers: $translateModifiers
+                    ) { keyCode, modifiers in
+                        TranslateHotKeyPreference(keyCode: keyCode, modifiers: modifiers).save()
+                    }
                 }
             }
-            Section("Clipboard History") {
-                ShortcutRecorderRow(
-                    title: "Open clipboard history",
-                    subtitle: "Toggles the clipboard history panel.",
-                    requiresModifier: true,
-                    defaultKeyCode: HotKeyPreference.defaultValue.keyCode,
-                    defaultModifiers: HotKeyPreference.defaultValue.modifiers,
-                    keyCode: $clipboardKeyCode,
-                    modifiers: $clipboardModifiers
-                ) { keyCode, modifiers in
-                    HotKeyPreference(keyCode: keyCode, modifiers: modifiers).save()
-                }
-            }
+            .padding(20)
         }
-        .frame(minWidth: 420)
     }
 }
 
@@ -292,8 +346,11 @@ struct PreferencesView: View {
                 .tabItem {
                     Text("Permissions")
                 }
+            PromptSettingsView()
+                .tabItem {
+                    Text("LLM")
+                }
         }
-        .padding(12)
         .frame(minWidth: 520, minHeight: 360)
     }
 }
@@ -306,65 +363,68 @@ struct PermissionsPanelView: View {
     @State private var isRequestingMicrophone = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Permissions")
-                    .font(.headline)
-                Text("Grant the permissions below to keep shortcuts and recording working across apps.")
-                    .font(.caption)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PreferencesHeader(
+                    title: "Permissions",
+                    subtitle: "Grant the permissions below to keep shortcuts and recording working across apps."
+                )
+
+                SectionCard(title: "System Access", subtitle: "Required for global shortcuts and focus control.") {
+                    PermissionRow(
+                        title: "Input Monitoring",
+                        detail: "Required for global shortcuts across all apps.",
+                        statusText: inputMonitoringAllowed ? "Allowed" : "Denied",
+                        statusColor: inputMonitoringAllowed ? .green : .red,
+                        actionTitle: "Open Settings",
+                        actionEnabled: true,
+                        action: openInputMonitoringSettings
+                    )
+
+                    PermissionRow(
+                        title: "Accessibility",
+                        detail: "Required to inject text and control focus.",
+                        statusText: accessibilityAllowed ? "Allowed" : "Denied",
+                        statusColor: accessibilityAllowed ? .green : .red,
+                        actionTitle: "Open Settings",
+                        actionEnabled: true,
+                        action: openAccessibilitySettings
+                    )
+
+                    PermissionRow(
+                        title: "Microphone",
+                        detail: "Required to capture audio for transcription.",
+                        statusText: microphoneStatus,
+                        statusColor: microphoneStatusColor,
+                        actionTitle: microphoneActionTitle,
+                        actionEnabled: !isRequestingMicrophone,
+                        action: handleMicrophoneAction
+                    )
+                }
+
+                SectionCard(title: "Diagnostics", subtitle: "Helpful for support or debugging.") {
+                    InfoRow(
+                        title: "App Path",
+                        value: Bundle.main.bundlePath
+                    )
+                    HStack {
+                        Button("Refresh Status") {
+                            refreshStatuses()
+                        }
+                        Spacer()
+                        if allPermissionsGranted {
+                            Text("All set")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Text("Note: macOS blocks global shortcuts while Secure Input is active (for example in password fields).")
+                    .font(.caption2)
                     .foregroundColor(.secondary)
             }
-
-            PermissionRow(
-                title: "Input Monitoring",
-                detail: "Required for global shortcuts across all apps.",
-                statusText: inputMonitoringAllowed ? "Allowed" : "Denied",
-                statusColor: inputMonitoringAllowed ? .green : .red,
-                actionTitle: "Open Settings",
-                actionEnabled: true,
-                action: openInputMonitoringSettings
-            )
-
-            PermissionRow(
-                title: "Accessibility",
-                detail: "Required to inject text and control focus.",
-                statusText: accessibilityAllowed ? "Allowed" : "Denied",
-                statusColor: accessibilityAllowed ? .green : .red,
-                actionTitle: "Open Settings",
-                actionEnabled: true,
-                action: openAccessibilitySettings
-            )
-
-            PermissionRow(
-                title: "Microphone",
-                detail: "Required to capture audio for transcription.",
-                statusText: microphoneStatus,
-                statusColor: microphoneStatusColor,
-                actionTitle: microphoneActionTitle,
-                actionEnabled: !isRequestingMicrophone,
-                action: handleMicrophoneAction
-            )
-
-            InfoRow(
-                title: "App Path",
-                value: Bundle.main.bundlePath
-            )
-
-            HStack {
-                Button("Refresh Status") {
-                    refreshStatuses()
-                }
-                Spacer()
-                if allPermissionsGranted {
-                    Text("All set")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Text("Note: macOS blocks global shortcuts while Secure Input is active (for example in password fields).")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            .padding(20)
         }
         .onAppear {
             refreshStatuses()
@@ -483,6 +543,58 @@ struct InfoRow: View {
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
         }
+    }
+}
+
+private struct PreferencesHeader: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.title2.weight(.semibold))
+            Text(subtitle)
+                .font(.callout)
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+private struct SectionCard<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let content: Content
+
+    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                content
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12))
+        )
     }
 }
 
@@ -648,5 +760,419 @@ struct ShortcutRecorderRow: View {
             modifiers |= UInt32(shiftKey)
         }
         return modifiers
+    }
+}
+
+@MainActor
+final class SelectionTranslationViewModel: ObservableObject {
+    struct ChatMessage: Identifiable, Equatable {
+        enum Role {
+            case user
+            case assistant
+        }
+
+        enum Kind {
+            case selection
+            case chat
+        }
+
+        let id = UUID()
+        let role: Role
+        var content: String
+        let kind: Kind
+    }
+
+    enum State: Equatable {
+        case idle
+        case translating
+        case ready
+        case error(String)
+    }
+
+    @Published var state: State = .idle
+    @Published var messages: [ChatMessage] = []
+    @Published var composerText: String = ""
+
+    private let client = OfflineLLMClient()
+    private var task: Task<Void, Never>?
+    private var pendingAssistantID: UUID?
+
+    func start(text: String?) {
+        task?.cancel()
+        task = nil
+        messages = []
+        composerText = ""
+        pendingAssistantID = nil
+
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            state = .error("No text selected.")
+            return
+        }
+
+        sendUserMessage(text)
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        pendingAssistantID = nil
+    }
+
+    func sendComposerMessage() {
+        let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        composerText = ""
+        sendUserMessage(text, kind: .chat)
+    }
+
+    private func sendUserMessage(_ text: String, kind: ChatMessage.Kind = .selection) {
+        task?.cancel()
+        task = nil
+
+        let message = ChatMessage(role: .user, content: text, kind: kind)
+        messages.append(message)
+        let assistant = ChatMessage(role: .assistant, content: "", kind: .chat)
+        messages.append(assistant)
+        pendingAssistantID = assistant.id
+        state = .translating
+        task = Task { @MainActor [weak self] in
+            await self?.runTranslation()
+        }
+    }
+
+    private func runTranslation() async {
+        do {
+            let payload = messages.filter { message in
+                !(message.role == .assistant && message.content.isEmpty)
+            }.map { message in
+                OfflineLLMClient.ChatMessage(
+                    role: message.role == .user ? "user" : "assistant",
+                    content: message.content,
+                    applyTemplate: message.role == .user && message.kind == .selection
+                )
+            }
+            let assistantID = pendingAssistantID
+            let translated = try await client.chatStream(
+                messages: payload,
+                profile: .translation
+            ) { [weak self] delta in
+                self?.appendAssistantDelta(delta, assistantID: assistantID)
+            }
+            if Task.isCancelled {
+                return
+            }
+            finalizeAssistantMessage(translated, assistantID: assistantID)
+            state = .ready
+        } catch {
+            if Task.isCancelled {
+                return
+            }
+            state = .error("Translation failed.")
+        }
+    }
+
+    private func appendAssistantDelta(_ delta: String, assistantID: UUID?) {
+        guard let assistantID else { return }
+        guard let index = messages.firstIndex(where: { $0.id == assistantID }) else { return }
+        messages[index].content += delta
+    }
+
+    private func finalizeAssistantMessage(_ fullText: String, assistantID: UUID?) {
+        guard let assistantID else { return }
+        guard let index = messages.firstIndex(where: { $0.id == assistantID }) else { return }
+        messages[index].content = fullText
+        pendingAssistantID = nil
+    }
+}
+
+struct SelectionTranslationView: View {
+    @ObservedObject var model: SelectionTranslationViewModel
+    let onClose: () -> Void
+    let onCopy: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            chatBody
+            composer
+        }
+        .padding(16)
+        .frame(width: 600, height: 420)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.bubble")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Translation Chat")
+                    .font(.headline)
+                Text("Chat with the local Ollama model about your selection.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            statusView
+            Button("Close") {
+                onClose()
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var chatBody: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if model.messages.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if case .error(let message) = model.state {
+                                Text(message)
+                                    .font(.headline)
+                                Text("Select text and trigger the translate shortcut to try again.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("No messages yet")
+                                    .font(.headline)
+                                Text("Select text and trigger the translate shortcut to start.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                    } else {
+                        ForEach(model.messages) { message in
+                            chatBubble(for: message)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: model.messages) { _ in
+                if let last = model.messages.last?.id {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.55))
+        )
+    }
+
+    private func chatBubble(for message: SelectionTranslationViewModel.ChatMessage) -> some View {
+        HStack {
+            if message.role == .assistant {
+                bubbleContent(message, alignment: .leading, background: Color.white.opacity(0.08))
+                Spacer(minLength: 40)
+            } else {
+                Spacer(minLength: 40)
+                bubbleContent(message, alignment: .trailing, background: Color.accentColor.opacity(0.18))
+            }
+        }
+        .id(message.id)
+    }
+
+    private func bubbleContent(
+        _ message: SelectionTranslationViewModel.ChatMessage,
+        alignment: HorizontalAlignment,
+        background: Color
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 4) {
+            Text(label(for: message))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text(message.content)
+                .font(.body)
+                .textSelection(.enabled)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(background)
+        )
+        .frame(maxWidth: 420, alignment: alignment == .leading ? .leading : .trailing)
+    }
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Continue the conversation")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                TextEditor(text: $model.composerText)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 90)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color(nsColor: .textBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.secondary.opacity(0.2))
+                    )
+
+                VStack(spacing: 8) {
+                    Button("Send") {
+                        model.sendComposerMessage()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.state == .translating)
+
+                    Button("Copy Last") {
+                        if let last = model.messages.last(where: { $0.role == .assistant }) {
+                            onCopy(last.content)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.messages.first(where: { $0.role == .assistant }) == nil)
+                }
+            }
+
+            HStack {
+                Text("Esc to close")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+    }
+
+    private func label(for message: SelectionTranslationViewModel.ChatMessage) -> String {
+        switch message.role {
+        case .assistant:
+            return "Assistant"
+        case .user:
+            return message.kind == .selection ? "Selected" : "You"
+        }
+    }
+
+    @ViewBuilder
+    private var statusView: some View {
+        switch model.state {
+        case .translating:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.8)
+                Text("Translating")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .error(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.red)
+        default:
+            EmptyView()
+        }
+    }
+}
+
+@MainActor
+final class SelectionTranslationPanelController {
+    static let shared = SelectionTranslationPanelController()
+
+    private let viewModel = SelectionTranslationViewModel()
+    private var panel: SelectionTranslationPanel?
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
+    private init() {
+        createPanel()
+    }
+
+    func show(text: String?) {
+        if panel == nil {
+            createPanel()
+        }
+        viewModel.start(text: text)
+        panel?.show()
+        startKeyMonitor()
+    }
+
+    func hide() {
+        panel?.hide()
+        stopKeyMonitor()
+        viewModel.cancel()
+    }
+
+    private func createPanel() {
+        let view = SelectionTranslationView(
+            model: viewModel,
+            onClose: { [weak self] in
+                self?.hide()
+            },
+            onCopy: { [weak self] text in
+                self?.copyText(text)
+            }
+        )
+        panel = SelectionTranslationPanel(rootView: view)
+    }
+
+    private func copyText(_ text: String) {
+        guard !text.isEmpty else { return }
+        ClipboardObserver.shared.markInternalWrite()
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    private func startKeyMonitor() {
+        guard eventTap == nil else { return }
+        let mask = (1 << CGEventType.keyDown.rawValue)
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let controller = Unmanaged<SelectionTranslationPanelController>.fromOpaque(refcon).takeUnretainedValue()
+            if type != .keyDown {
+                return Unmanaged.passUnretained(event)
+            }
+            return controller.handleEventTap(event)
+        }
+
+        eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: callback,
+            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        )
+        guard let eventTap else { return }
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        if let runLoopSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+    }
+
+    private func stopKeyMonitor() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+        }
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        eventTap = nil
+        runLoopSource = nil
+    }
+
+    private func handleEventTap(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
+        guard panel?.isVisible == true else { return Unmanaged.passUnretained(cgEvent) }
+        guard let event = NSEvent(cgEvent: cgEvent) else { return Unmanaged.passUnretained(cgEvent) }
+
+        if event.keyCode == 53 { // Esc
+            hide()
+            return nil
+        }
+
+        return Unmanaged.passUnretained(cgEvent)
     }
 }

@@ -197,6 +197,42 @@ struct HotKeyPreference: Equatable {
     }
 }
 
+struct TranslateHotKeyPreference: Equatable {
+    let keyCode: UInt32
+    let modifiers: UInt32
+
+    static let keyCodeDefaultsKey = "translateKeyCode"
+    static let modifiersDefaultsKey = "translateModifiers"
+    static let defaultValue = TranslateHotKeyPreference(
+        keyCode: UInt32(kVK_ANSI_T),
+        modifiers: UInt32(cmdKey | optionKey)
+    )
+
+    static func load() -> TranslateHotKeyPreference {
+        let defaults = UserDefaults.standard
+        let keyCodeValue = defaults.object(forKey: keyCodeDefaultsKey) as? Int
+        let modifiersValue = defaults.object(forKey: modifiersDefaultsKey) as? Int
+        let keyCode = UInt32(keyCodeValue ?? Int(defaultValue.keyCode))
+        let modifiers = UInt32(modifiersValue ?? Int(defaultValue.modifiers))
+        let candidate = TranslateHotKeyPreference(keyCode: keyCode, modifiers: modifiers)
+        return candidate.isValid ? candidate : defaultValue
+    }
+
+    func save() {
+        let defaults = UserDefaults.standard
+        defaults.set(Int(keyCode), forKey: Self.keyCodeDefaultsKey)
+        defaults.set(Int(modifiers), forKey: Self.modifiersDefaultsKey)
+    }
+
+    var isValid: Bool {
+        modifiers != 0
+    }
+
+    var displayString: String {
+        HotKeyPreference.displayString(keyCode: keyCode, modifiers: modifiers)
+    }
+}
+
 struct ActivationKeyPreference: Equatable {
     let keyCode: UInt32
     let modifiers: UInt32

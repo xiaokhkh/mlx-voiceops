@@ -7,7 +7,7 @@ final class OverlayPanel: NSPanel {
 
     init(rootView: some View) {
         let hosting = NSHostingView(rootView: rootView)
-        let rect = NSRect(x: 0, y: 0, width: 360, height: 180)
+        let rect = NSRect(x: 0, y: 0, width: 380, height: 220)
         super.init(contentRect: rect, styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
 
         titleVisibility = .hidden
@@ -52,6 +52,55 @@ final class OverlayPanel: NSPanel {
         let size = self.frame.size
         let x = frame.midX - size.width / 2
         let y = frame.maxY - size.height - 40
+        setFrameOrigin(NSPoint(x: x, y: y))
+    }
+}
+
+final class SelectionTranslationPanel: NSPanel {
+    init(rootView: some View) {
+        let hosting = NSHostingView(rootView: rootView)
+        let rect = NSRect(x: 0, y: 0, width: 600, height: 420)
+        super.init(
+            contentRect: rect,
+            styleMask: [.titled, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        isReleasedWhenClosed = false
+        isMovableByWindowBackground = false
+        isFloatingPanel = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = true
+        hidesOnDeactivate = false
+        isMovableByWindowBackground = true
+
+        contentView = hosting
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    func show() {
+        positionCenter()
+        makeKeyAndOrderFront(nil)
+    }
+
+    func hide() {
+        orderOut(nil)
+    }
+
+    private func positionCenter() {
+        guard let screen = NSScreen.main else { return }
+        let frame = screen.visibleFrame
+        let size = self.frame.size
+        let x = frame.midX - size.width / 2
+        let y = frame.midY - size.height / 2
         setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
