@@ -128,36 +128,6 @@ final class FocusInjector {
         return true
     }
 
-    func captureSelectedText() -> String? {
-        guard Permissions.hasAccessibility() else { return nil }
-        let system = AXUIElementCreateSystemWide()
-        var focused: AnyObject?
-        let focusStatus = AXUIElementCopyAttributeValue(
-            system,
-            kAXFocusedUIElementAttribute as CFString,
-            &focused
-        )
-        if focusStatus == .success, let focused {
-            if CFGetTypeID(focused) == AXUIElementGetTypeID() {
-                let element = focused as! AXUIElement
-                var selectedObj: AnyObject?
-                let selectedStatus = AXUIElementCopyAttributeValue(
-                    element,
-                    kAXSelectedTextAttribute as CFString,
-                    &selectedObj
-                )
-                if selectedStatus == .success, let selected = selectedObj as? String, !selected.isEmpty {
-                    return selected
-                }
-            }
-        }
-        guard let snapshot = snapshotForCurrentFocus() else { return nil }
-        guard let range = snapshot.range, range.length > 0 else { return nil }
-        let nsValue = snapshot.value as NSString
-        let nsRange = NSRange(location: range.location, length: range.length)
-        return nsValue.substring(with: nsRange)
-    }
-
     private func fallbackInsert(text: String, snapshot: FocusSnapshot?) -> Bool {
         if let snapshot, insertViaAX(text: text, snapshot: snapshot) {
             return true
@@ -323,6 +293,7 @@ final class FocusInjector {
         let cmdUp = post(cmdKey, down: false, flags: [])
         return cmdDown && vDown && vUp && cmdUp
     }
+
 
     private func decodedImage(from data: Data) -> NSImage? {
         if let image = NSImage(data: data) {

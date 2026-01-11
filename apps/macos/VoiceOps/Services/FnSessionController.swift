@@ -20,6 +20,7 @@ final class FnSessionController {
     private let asr = ASRClient()
     private let fastASR = FastASRClient()
     private let injector = FocusInjector()
+    private let selectionCapture = SelectionCaptureService.shared
     private let llmRouter = LLMRouter()
     private let fastChunkDuration: TimeInterval
     private let fastChunkFrames: Int
@@ -67,7 +68,8 @@ final class FnSessionController {
         }
         Permissions.requestAccessibilityIfNeeded()
         currentSessionID = UUID()
-        selectedTextSnapshot = injector.captureSelectedText()
+        let selection = await selectionCapture.captureSelection()
+        selectedTextSnapshot = selection.text
         Task { [weak self] in
             await self?.llmRouter.warmUp()
         }
