@@ -1,0 +1,213 @@
+import Foundation
+import Network
+
+final class SidecarLauncher {
+    static let shared = SidecarLauncher()
+
+    struct Sidecar {
+        let name: String
+        let directory: String
+        let script: String
+        let port: Int
+    }
+
+    private let sidecars: [Sidecar] = [
+        Sidecar(name: "asr_mlx", directory: "asr_mlx", script: "server.py", port: 8765),
+        Sidecar(name: "fast_asr", directory: "fast_asr", script: "server.py", port: 8790),
+        Sidecar(name: "llm_stub", directory: "llm_stub", script: "server.py", port: 8787),
+    ]
+
+    private var processes: [String: Process] = [:]
+    private var logHandles: [String: FileHandle] = [:]
+    private let checkQueue = DispatchQueue(label: "voiceops.sidecar.check")
+
+    private init() {}
+
+    func startAll() {
+        Task { await startAllAsync() }
+    }
+
+    func stopAll() {
+        for (_, process) in processes {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+        processes.removeAll()
+        for (_, handle) in logHandles {
+            try? handle.close()
+        }
+        logHandles.removeAll()
+    }
+
+    private func startAllAsync() async {
+        guard let root = findSidecarRoot() else {
+            print("[sidecar] root_not_found")
+            return
+        }
+        let repoRoot = root.deletingLastPathComponent()
+        for sidecar in sidecars {
+            let isUp = await isPortOpen(sidecar.port)
+            if isUp {
+                print("[sidecar] already_running \(sidecar.name)")
+                continue
+            }
+            start(sidecar, root: root, repoRoot: repoRoot)
+        }
+    }
+
+    private func start(_ sidecar: Sidecar, root: URL, repoRoot: URL) {
+        let dir = root.appendingPathComponent(sidecar.directory, isDirectory: true)
+        let scriptURL = dir.appendingPathComponent(sidecar.script)
+        guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+            print("[sidecar] script_missing \(sidecar.name) path=\(scriptURL.path)")
+            return
+        }
+        guard let pythonURL = pythonExecutableURL(for: dir) else {
+            print("[sidecar] python_missing \(sidecar.name)")
+            return
+        }
+
+        let process = Process()
+        process.executableURL = pythonURL
+        process.arguments = [scriptURL.path]
+        process.currentDirectoryURL = dir
+        process.environment = buildEnvironment(for: sidecar, root: root, repoRoot: repoRoot)
+        let logURL = logFileURL(name: sidecar.name)
+        if let handle = logHandle(for: logURL) {
+            process.standardOutput = handle
+            process.standardError = handle
+            logHandles[sidecar.name] = handle
+        }
+        process.terminationHandler = { [weak self] proc in
+            print("[sidecar] exited \(sidecar.name) code=\(proc.terminationStatus)")
+            self?.processes.removeValue(forKey: sidecar.name)
+        }
+
+        do {
+            try process.run()
+            processes[sidecar.name] = process
+            print("[sidecar] started \(sidecar.name) pid=\(process.processIdentifier)")
+        } catch {
+            print("[sidecar] start_failed \(sidecar.name) error=\(error)")
+        }
+    }
+
+    private func buildEnvironment(for sidecar: Sidecar, root: URL, repoRoot: URL) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONUNBUFFERED"] = "1"
+        if sidecar.name == "fast_asr" {
+            let modelDir = repoRoot.appendingPathComponent("models/zipformer", isDirectory: true)
+            if FileManager.default.fileExists(atPath: modelDir.path) {
+                env["FAST_ASR_MODEL_DIR"] = modelDir.path
+            }
+        }
+        return env
+    }
+
+    private func pythonExecutableURL(for sidecarDir: URL) -> URL? {
+        if let custom = ProcessInfo.processInfo.environment["VOICEOPS_PYTHON_PATH"] {
+            let url = URL(fileURLWithPath: custom)
+            if FileManager.default.isExecutableFile(atPath: url.path) {
+                return url
+            }
+        }
+        let venvPython = sidecarDir.appendingPathComponent(".venv/bin/python")
+        if FileManager.default.isExecutableFile(atPath: venvPython.path) {
+            return venvPython
+        }
+        let venvPython3 = sidecarDir.appendingPathComponent(".venv/bin/python3")
+        if FileManager.default.isExecutableFile(atPath: venvPython3.path) {
+            return venvPython3
+        }
+        let systemPython = URL(fileURLWithPath: "/usr/bin/python3")
+        if FileManager.default.isExecutableFile(atPath: systemPython.path) {
+            return systemPython
+        }
+        return nil
+    }
+
+    private func findSidecarRoot() -> URL? {
+        if let value = ProcessInfo.processInfo.environment["VOICEOPS_SIDECAR_ROOT"] {
+            let url = URL(fileURLWithPath: value)
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+
+        if let resourceRoot = Bundle.main.resourceURL?.appendingPathComponent("sidecars"),
+           FileManager.default.fileExists(atPath: resourceRoot.path) {
+            return resourceRoot
+        }
+
+        var cursor = Bundle.main.bundleURL
+        for _ in 0..<6 {
+            let candidate = cursor.deletingLastPathComponent().appendingPathComponent("sidecars")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            cursor = cursor.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    private func logFileURL(name: String) -> URL {
+        let support = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let logs = support.appendingPathComponent("Logs/VoiceOps", isDirectory: true)
+        try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        return logs.appendingPathComponent("sidecar_\(name).log")
+    }
+
+    private func logHandle(for url: URL) -> FileHandle? {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        return try? FileHandle(forWritingTo: url)
+    }
+
+    private func isPortOpen(_ port: Int) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let state = PortCheck()
+            let connection = NWConnection(
+                host: .ipv4(IPv4Address("127.0.0.1")!),
+                port: NWEndpoint.Port(integerLiteral: UInt16(port)),
+                using: .tcp
+            )
+            @Sendable func finish(_ value: Bool) {
+                state.finish(value, connection: connection, continuation: continuation)
+            }
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    finish(true)
+                case .failed, .cancelled:
+                    finish(false)
+                default:
+                    break
+                }
+            }
+            connection.start(queue: checkQueue)
+            checkQueue.asyncAfter(deadline: .now() + 0.4) {
+                finish(false)
+            }
+        }
+    }
+}
+
+private final class PortCheck: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resolved = false
+
+    func finish(
+        _ value: Bool,
+        connection: NWConnection,
+        continuation: CheckedContinuation<Bool, Never>
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resolved else { return }
+        resolved = true
+        connection.cancel()
+        continuation.resume(returning: value)
+    }
+}

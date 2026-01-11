@@ -8,14 +8,19 @@ struct OverlayView: View {
     @AppStorage(HotKeyPreference.modifiersDefaultsKey) private var clipboardModifiers = Int(HotKeyPreference.defaultValue.modifiers)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(statusTitle)
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: statusIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(statusColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.headline)
+                    Text(statusHint)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
-                Text(statusHint)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
 
             Picker("Mode", selection: $pipeline.mode) {
@@ -25,44 +30,66 @@ struct OverlayView: View {
             }
             .pickerStyle(.segmented)
 
-            if !pipeline.transcript.isEmpty {
-                Text(pipeline.transcript)
-                    .font(.body)
-                    .lineLimit(3)
+            if !pipeline.transcript.isEmpty || !pipeline.output.isEmpty || isError {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !pipeline.transcript.isEmpty {
+                        Text("Transcript")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(pipeline.transcript)
+                            .font(.body)
+                            .lineLimit(3)
+                    }
+
+                    if case .error(let message) = pipeline.state {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .lineLimit(3)
+                    } else if !pipeline.output.isEmpty {
+                        Text("Output")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(pipeline.output)
+                            .font(.body)
+                            .lineLimit(3)
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(nsColor: .textBackgroundColor).opacity(0.65))
+                )
             }
 
-            if case .error(let message) = pipeline.state {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .lineLimit(3)
-            } else if !pipeline.output.isEmpty {
-                Text(pipeline.output)
-                    .font(.body)
-                    .lineLimit(3)
-            }
-
-            HStack {
+            HStack(spacing: 8) {
                 Button(primaryButtonTitle) {
                     pipeline.toggleRecord()
                 }
+                .buttonStyle(.borderedProminent)
 
                 if case .ready = pipeline.state {
                     Button("Insert") {
                         pipeline.insertToFocusedApp()
                     }
+                    .buttonStyle(.bordered)
                 }
 
                 if pipeline.state != .idle {
                     Button("Cancel") {
                         pipeline.cancel()
                     }
+                    .buttonStyle(.bordered)
                 }
             }
+
+            Text(shortcutHint)
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
-        .padding(14)
-        .frame(width: 360)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(16)
+        .frame(width: 380)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var statusTitle: String {
@@ -85,7 +112,7 @@ struct OverlayView: View {
     private var statusHint: String {
         switch pipeline.state {
         case .idle:
-            return "Hold \(activationDisplay) / \(clipboardDisplay)"
+            return "Hold \(activationDisplay) to speak"
         case .recording:
             return "Release \(activationDisplay) to stop"
         case .transcribing, .generating:
@@ -106,6 +133,47 @@ struct OverlayView: View {
         }
     }
 
+    private var isError: Bool {
+        if case .error = pipeline.state {
+            return true
+        }
+        return false
+    }
+
+    private var statusIcon: String {
+        switch pipeline.state {
+        case .recording:
+            return "waveform"
+        case .transcribing, .generating:
+            return "sparkles"
+        case .ready:
+            return "checkmark.circle"
+        case .error:
+            return "exclamationmark.triangle"
+        default:
+            return "mic.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch pipeline.state {
+        case .recording:
+            return .green
+        case .transcribing, .generating:
+            return .orange
+        case .ready:
+            return .blue
+        case .error:
+            return .red
+        default:
+            return .secondary
+        }
+    }
+
+    private var shortcutHint: String {
+        "Clipboard: \(clipboardDisplay) | Translate: \(translateDisplay)"
+    }
+
     private var activationDisplay: String {
         ActivationKeyPreference(
             keyCode: UInt32(activationKeyCode),
@@ -119,5 +187,9 @@ struct OverlayView: View {
             modifiers: UInt32(clipboardModifiers)
         )
         return (clipboardPreference.isValid ? clipboardPreference : HotKeyPreference.defaultValue).displayString
+    }
+
+    private var translateDisplay: String {
+        TranslateHotKeyPreference.load().displayString
     }
 }

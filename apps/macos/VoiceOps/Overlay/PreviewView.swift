@@ -5,12 +5,17 @@ struct PreviewView: View {
     private let maxChars = 160
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if model.state != .idle {
-                Image(systemName: model.state == .recording ? "waveform" : "clock")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(model.state == .recording ? .green : .orange)
-                    .padding(.top, 2)
+                HStack(spacing: 8) {
+                    Image(systemName: model.state == .recording ? "waveform" : "clock")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(model.state == .recording ? .green : .orange)
+                    Text(model.state == .recording ? "Recording" : "Processing")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
             }
             Text(displayText())
                 .font(.system(size: 14))

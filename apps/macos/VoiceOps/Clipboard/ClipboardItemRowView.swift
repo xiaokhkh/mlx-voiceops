@@ -9,6 +9,7 @@ struct ClipboardItemRowView: View {
     let onPin: () -> Void
     let onInject: () -> Void
     let onDelete: () -> Void
+    let onHoverImage: (ClipboardItem?) -> Void
 
     @State private var hovering = false
 
@@ -62,7 +63,14 @@ struct ClipboardItemRowView: View {
         .onTapGesture(count: 2) {
             onInject()
         }
-        .onHover { hovering = $0 }
+        .onHover { isHovering in
+            hovering = isHovering
+            if isHovering {
+                onHoverImage(item.type == .image ? item : nil)
+            } else {
+                onHoverImage(nil)
+            }
+        }
     }
 
     private var previewText: String {

@@ -31,7 +31,7 @@ final class LLMRouter {
         var offlineLatency: Int?
 
         do {
-            let translated = try await offlineClient.translate(text: text)
+            let translated = try await offlineClient.translate(text: text, profile: .voice)
             offlineLatency = Int((CFAbsoluteTimeGetCurrent() - offlineStart) * 1000)
             let finalText = translated.isEmpty ? text : translated
             logDecision(

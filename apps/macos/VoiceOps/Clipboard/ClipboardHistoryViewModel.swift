@@ -107,6 +107,11 @@ final class ClipboardHistoryViewModel: ObservableObject {
         injectItem(item)
     }
 
+    func activateSelected() {
+        guard let item = selectedItem() else { return }
+        activateItem(item)
+    }
+
     func deleteSelected() {
         guard let item = selectedItem() else { return }
         deleteItem(item)
@@ -163,6 +168,18 @@ final class ClipboardHistoryViewModel: ObservableObject {
         }
     }
 
+    func activateItem(_ item: ClipboardItem) {
+        switch item.type {
+        case .text:
+            injectItem(item)
+        case .image:
+            if revealImageInFinder(item) {
+                return
+            }
+            injectItem(item)
+        }
+    }
+
     func metaText(for item: ClipboardItem) -> String {
         let source = item.source == .voiceops ? "VoiceOps" : "System"
         let time = relativeTimeString(timestampMs: item.timestamp)
@@ -200,6 +217,52 @@ final class ClipboardHistoryViewModel: ObservableObject {
             return NSImage(cgImage: cgImage, size: .zero)
         }
         return nil
+    }
+
+    func previewImage(for item: ClipboardItem) -> NSImage? {
+        guard item.type == .image else { return nil }
+        if let path = item.contentImagePath, let image = NSImage(contentsOfFile: path) {
+            return image
+        }
+        if let path = item.contentOriginalPath, let image = NSImage(contentsOfFile: path) {
+            return image
+        }
+        guard let data = loadImageData(for: item) else { return nil }
+        return decodedImage(from: data)
+    }
+
+    private func revealImageInFinder(_ item: ClipboardItem) -> Bool {
+        if let url = existingFileURL(item.contentOriginalPath) ?? existingFileURL(item.contentImagePath) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return true
+        }
+        guard let data = loadImageData(for: item) else { return false }
+        do {
+            let dir = try ensurePreviewDirectory()
+            let fileURL = dir.appendingPathComponent("clipboard_\(UUID().uuidString).png")
+            try data.write(to: fileURL, options: .atomic)
+            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func existingFileURL(_ path: String?) -> URL? {
+        guard let path else { return nil }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    private func ensurePreviewDirectory() throws -> URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let dir = (base ?? URL(fileURLWithPath: NSTemporaryDirectory()))
+            .appendingPathComponent("VoiceOps/ClipboardImages", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
     }
 
     private func imageMeta(for item: ClipboardItem) -> String? {

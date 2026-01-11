@@ -28,6 +28,16 @@ final class OfflineLLMClient {
         let message: Message?
     }
 
+    private struct StreamResponseBody: Decodable {
+        let message: Message?
+        let done: Bool?
+    }
+
+    enum PromptProfile {
+        case translation
+        case voice
+    }
+
     private let baseURL = URL(string: "http://127.0.0.1:11434")!
     private let model: String
     private let session: URLSession
@@ -46,24 +56,43 @@ final class OfflineLLMClient {
         }
         Self.warmUpState = .running
         do {
-            _ = try await translate(text: "Hello")
+            _ = try await translate(text: "Hello", profile: .voice)
             Self.warmUpState = .done
         } catch {
             Self.warmUpState = .idle
         }
     }
 
-    func translate(text: String) async throws -> String {
+    func translate(text: String, profile: PromptProfile = .translation) async throws -> String {
+        try await chat(
+            messages: [ChatMessage(role: "user", content: text, applyTemplate: true)],
+            profile: profile
+        )
+    }
+
+    struct ChatMessage {
+        let role: String
+        let content: String
+        let applyTemplate: Bool
+    }
+
+    func chat(messages: [ChatMessage], profile: PromptProfile = .translation) async throws -> String {
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/chat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let mapped = messages.map { message in
+            if message.role == "user", message.applyTemplate {
+                return Message(role: "user", content: OfflineLLMClient.userPrompt(text: message.content, profile: profile))
+            }
+            return Message(role: message.role, content: message.content)
+        }
+
         let body = RequestBody(
             model: model,
             messages: [
-                Message(role: "system", content: OfflineLLMClient.systemPrompt),
-                Message(role: "user", content: OfflineLLMClient.userPrompt(text: text))
-            ],
+                Message(role: "system", content: OfflineLLMClient.loadSystemPrompt(profile: profile))
+            ] + mapped,
             stream: false
         )
         req.httpBody = try JSONEncoder().encode(body)
@@ -77,6 +106,57 @@ final class OfflineLLMClient {
             throw OfflineError.invalidResponse
         }
         return stripCodeFence(content).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func chatStream(
+        messages: [ChatMessage],
+        profile: PromptProfile = .translation,
+        onDelta: @escaping (String) -> Void
+    ) async throws -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("/api/chat"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let mapped = messages.map { message in
+            if message.role == "user", message.applyTemplate {
+                return Message(role: "user", content: OfflineLLMClient.userPrompt(text: message.content, profile: profile))
+            }
+            return Message(role: message.role, content: message.content)
+        }
+
+        let body = RequestBody(
+            model: model,
+            messages: [
+                Message(role: "system", content: OfflineLLMClient.loadSystemPrompt(profile: profile))
+            ] + mapped,
+            stream: true
+        )
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (bytes, resp) = try await session.bytes(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw OfflineError.invalidResponse
+        }
+
+        var buffer = ""
+        for try await line in bytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if trimmed == "[DONE]" { break }
+            let payload = trimmed.hasPrefix("data: ") ? String(trimmed.dropFirst(6)) : trimmed
+            guard let data = payload.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode(StreamResponseBody.self, from: data) else {
+                continue
+            }
+            if let content = decoded.message?.content, !content.isEmpty {
+                buffer += content
+                onDelta(content)
+            }
+            if decoded.done == true {
+                break
+            }
+        }
+        return stripCodeFence(buffer).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func stripCodeFence(_ text: String) -> String {
@@ -96,15 +176,21 @@ final class OfflineLLMClient {
         return inner.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static let systemPrompt = """
-You are a translation module inside a programming-focused voice input tool.
+    static let translationSystemPromptDefaultsKey = "offlineTranslationSystemPrompt"
+    static let translationUserPromptDefaultsKey = "offlineTranslationUserPromptTemplate"
+    static let voiceSystemPromptDefaultsKey = "offlineVoiceSystemPrompt"
+    static let voiceUserPromptDefaultsKey = "offlineVoiceUserPromptTemplate"
+
+    static let defaultTranslationSystemPrompt = """
+You are an English teacher who translates text for a programming-focused tool.
 
 Your job:
-- Translate ALL input to English using a formal, concise engineering tone.
-- Preserve meaning. Do not invent facts, commands, logs, or technical conclusions.
-- Keep code identifiers, file paths, URLs, and CLI commands unchanged.
+- Primarily translate English to Chinese. If the input is already Chinese, polish it for clarity.
+- Keep the meaning exact. Do not invent facts, commands, logs, or technical conclusions.
+- Preserve code identifiers, file paths, URLs, and CLI commands verbatim.
 - Keep numbers, versions, and punctuation intact when possible.
-- Normalize temporal references to be consistent. If multiple different weekdays appear, standardize them to avoid conflicts (e.g., use a single consistent reference such as "this week").
+- Normalize temporal references to be consistent. If multiple different weekdays appear, standardize them to avoid conflicts.
+- Use natural, fluent Chinese with clear, teacher-like phrasing.
 - Return only the translated text. No extra commentary.
 
 Runtime info (offline LLM):
@@ -115,15 +201,74 @@ Runtime info (offline LLM):
 - Response JSON: {"message":{"role":"assistant","content":"<string>"}}
 """
 
-    private static func userPrompt(text: String) -> String {
-        return """
-Translate the following text to English in a formal engineering style. If it is already English, keep it and apply the same normalization rules.
+    static let defaultTranslationUserPromptTemplate = """
+Translate the following text to Chinese. If it is already Chinese, polish it for clarity while preserving meaning and terminology.
 
 Text:
 <<<
-\(text)
+{{text}}
 >>>
 """
+
+    static let defaultVoiceSystemPrompt = """
+You are a writing-focused English-to-Chinese translator for voice input.
+
+Your job:
+- Translate spoken English into clear, natural Chinese.
+- If the input is already Chinese, polish it for clarity.
+- Preserve technical terms, code identifiers, file paths, URLs, and CLI commands.
+- Remove filler words and false starts, but do not change meaning.
+- Keep numbers, versions, and punctuation intact when possible.
+- Return only the translated text. No extra commentary.
+"""
+
+    static let defaultVoiceUserPromptTemplate = """
+Translate the following spoken text to Chinese. Keep it concise and natural.
+
+Text:
+<<<
+{{text}}
+>>>
+"""
+
+    private static func loadSystemPrompt(profile: PromptProfile) -> String {
+        let key: String
+        let fallback: String
+        switch profile {
+        case .translation:
+            key = translationSystemPromptDefaultsKey
+            fallback = defaultTranslationSystemPrompt
+        case .voice:
+            key = voiceSystemPromptDefaultsKey
+            fallback = defaultVoiceSystemPrompt
+        }
+        let stored = UserDefaults.standard.string(forKey: key) ?? ""
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : stored
+    }
+
+    private static func loadUserPromptTemplate(profile: PromptProfile) -> String {
+        let key: String
+        let fallback: String
+        switch profile {
+        case .translation:
+            key = translationUserPromptDefaultsKey
+            fallback = defaultTranslationUserPromptTemplate
+        case .voice:
+            key = voiceUserPromptDefaultsKey
+            fallback = defaultVoiceUserPromptTemplate
+        }
+        let stored = UserDefaults.standard.string(forKey: key) ?? ""
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : stored
+    }
+
+    private static func userPrompt(text: String, profile: PromptProfile) -> String {
+        var template = loadUserPromptTemplate(profile: profile)
+        if !template.contains("{{text}}") {
+            template += "\n\nText:\n<<<\n{{text}}\n>>>\n"
+        }
+        return template.replacingOccurrences(of: "{{text}}", with: text)
     }
 
     private static func makeSession() -> URLSession {

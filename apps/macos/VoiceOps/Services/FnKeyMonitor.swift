@@ -7,6 +7,7 @@ final class FnKeyMonitor {
     var onFnUp: (() -> Void)?
     var onFnSpace: (() -> Void)?
     var onClipboardToggle: (() -> Void)?
+    var onTranslateSelection: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -14,11 +15,14 @@ final class FnKeyMonitor {
     private var localMonitor: Any?
     private var isActivationDown = false
     private var isClipboardDown = false
+    private var isTranslateDown = false
     private let fnKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
     private var activationKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
     private var activationModifiers: UInt32 = 0
     private var clipboardKeyCode: CGKeyCode = CGKeyCode(kVK_Function)
     private var clipboardModifiers: UInt32 = UInt32(cmdKey)
+    private var translateKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_T)
+    private var translateModifiers: UInt32 = UInt32(cmdKey | optionKey)
 
     private var activationUsesFn: Bool {
         activationKeyCode == fnKeyCode && activationModifiers == 0
@@ -26,6 +30,10 @@ final class FnKeyMonitor {
 
     private var clipboardUsesFn: Bool {
         clipboardKeyCode == fnKeyCode
+    }
+
+    private var translateUsesFn: Bool {
+        translateKeyCode == fnKeyCode
     }
 
     private func dispatchAction(_ action: @escaping () -> Void) {
@@ -62,6 +70,7 @@ final class FnKeyMonitor {
         localMonitor = nil
         isActivationDown = false
         isClipboardDown = false
+        isTranslateDown = false
     }
 
     func updateActivationKey(keyCode: UInt32, modifiers: UInt32) {
@@ -74,6 +83,12 @@ final class FnKeyMonitor {
         clipboardKeyCode = CGKeyCode(keyCode)
         clipboardModifiers = modifiers
         isClipboardDown = false
+    }
+
+    func updateTranslateShortcut(keyCode: UInt32, modifiers: UInt32) {
+        translateKeyCode = CGKeyCode(keyCode)
+        translateModifiers = modifiers
+        isTranslateDown = false
     }
 
     func ensureEventTap() {
@@ -143,6 +158,9 @@ final class FnKeyMonitor {
             if clipboardUsesFn {
                 handleClipboardFnCombo(fnNow: fnNow, flags: event.flags)
             }
+            if translateUsesFn {
+                handleTranslateFnCombo(fnNow: fnNow, flags: event.flags)
+            }
             if keyCode == Int64(fnKeyCode) {
                 if activationUsesFn {
                     handleFnActivationState(fnNow: fnNow)
@@ -155,6 +173,16 @@ final class FnKeyMonitor {
                     isClipboardDown = true
                     dispatchAction { [weak self] in
                         self?.onClipboardToggle?()
+                    }
+                    return nil
+                }
+            }
+            if onTranslateSelection != nil, !translateUsesFn {
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                if !isRepeat, matchesTranslateShortcut(keyCode: keyCode, flags: event.flags) {
+                    isTranslateDown = true
+                    dispatchAction { [weak self] in
+                        self?.onTranslateSelection?()
                     }
                     return nil
                 }
@@ -183,6 +211,10 @@ final class FnKeyMonitor {
                 isClipboardDown = false
                 return nil
             }
+            if !translateUsesFn, isTranslateDown, keyCode == Int64(translateKeyCode) {
+                isTranslateDown = false
+                return nil
+            }
             if !activationUsesFn, keyCode == Int64(activationKeyCode) {
                 if isActivationDown {
                     isActivationDown = false
@@ -205,6 +237,9 @@ final class FnKeyMonitor {
             if clipboardUsesFn {
                 handleClipboardFnCombo(fnNow: fnNow, flags: event.modifierFlags)
             }
+            if translateUsesFn {
+                handleTranslateFnCombo(fnNow: fnNow, flags: event.modifierFlags)
+            }
             if event.keyCode == fnKeyCode {
                 if activationUsesFn {
                     handleFnActivationState(fnNow: fnNow)
@@ -217,6 +252,15 @@ final class FnKeyMonitor {
                 isClipboardDown = true
                 dispatchAction { [weak self] in
                     self?.onClipboardToggle?()
+                }
+                return true
+            }
+            if onTranslateSelection != nil, !translateUsesFn, !event.isARepeat,
+               matchesTranslateShortcut(keyCode: event.keyCode, flags: event.modifierFlags)
+            {
+                isTranslateDown = true
+                dispatchAction { [weak self] in
+                    self?.onTranslateSelection?()
                 }
                 return true
             }
@@ -242,6 +286,10 @@ final class FnKeyMonitor {
         case .keyUp:
             if !clipboardUsesFn, isClipboardDown, event.keyCode == clipboardKeyCode {
                 isClipboardDown = false
+                return true
+            }
+            if !translateUsesFn, isTranslateDown, event.keyCode == translateKeyCode {
+                isTranslateDown = false
                 return true
             }
             if !activationUsesFn, event.keyCode == activationKeyCode {
@@ -275,6 +323,21 @@ final class FnKeyMonitor {
         }
     }
 
+    private func handleTranslateFnCombo(fnNow: Bool, flags: CGEventFlags) {
+        guard translateUsesFn, onTranslateSelection != nil else { return }
+        let comboActive = fnNow && effectiveModifiers(from: flags) == translateModifiers
+        if comboActive && !isTranslateDown {
+            isTranslateDown = true
+            dispatchAction { [weak self] in
+                self?.onTranslateSelection?()
+            }
+            return
+        }
+        if !comboActive && isTranslateDown {
+            isTranslateDown = false
+        }
+    }
+
     private func handleClipboardFnCombo(fnNow: Bool, flags: NSEvent.ModifierFlags) {
         guard clipboardUsesFn, onClipboardToggle != nil else { return }
         let comboActive = fnNow && effectiveModifiers(from: flags) == clipboardModifiers
@@ -287,6 +350,21 @@ final class FnKeyMonitor {
         }
         if !comboActive && isClipboardDown {
             isClipboardDown = false
+        }
+    }
+
+    private func handleTranslateFnCombo(fnNow: Bool, flags: NSEvent.ModifierFlags) {
+        guard translateUsesFn, onTranslateSelection != nil else { return }
+        let comboActive = fnNow && effectiveModifiers(from: flags) == translateModifiers
+        if comboActive && !isTranslateDown {
+            isTranslateDown = true
+            dispatchAction { [weak self] in
+                self?.onTranslateSelection?()
+            }
+            return
+        }
+        if !comboActive && isTranslateDown {
+            isTranslateDown = false
         }
     }
 
@@ -318,6 +396,14 @@ final class FnKeyMonitor {
 
     private func matchesClipboardShortcut(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
         keyCode == clipboardKeyCode && effectiveModifiers(from: flags) == clipboardModifiers
+    }
+
+    private func matchesTranslateShortcut(keyCode: Int64, flags: CGEventFlags) -> Bool {
+        keyCode == Int64(translateKeyCode) && effectiveModifiers(from: flags) == translateModifiers
+    }
+
+    private func matchesTranslateShortcut(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        keyCode == translateKeyCode && effectiveModifiers(from: flags) == translateModifiers
     }
 
     private func effectiveModifiers(from flags: CGEventFlags) -> UInt32 {
