@@ -40,6 +40,7 @@
 		EDE998B031BBA4A469370198 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB0D2B51C2CAD31E36E2ABC /* LLMClient.swift */; };
 		F1261E36233BF186D5A8FC9A /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94431E21EE9DD50FB959EB16 /* PreviewView.swift */; };
 		F9B9E3E1C5F9123456789ABD /* SidecarLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B9E3E1C5F9123456789ABC /* SidecarLauncher.swift */; };
+		FA12BC34D5E6F708192A3B4C /* SelectionCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA12BC34D5E6F708192A3B4B /* SelectionCaptureService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +79,7 @@
 		DEE797DC9A2513ED177F2A7F /* FastASRClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastASRClient.swift; sourceTree = "<group>"; };
 		E80E9B37C69260A267888469 /* FnKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FnKeyMonitor.swift; sourceTree = "<group>"; };
 		F9B9E3E1C5F9123456789ABC /* SidecarLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidecarLauncher.swift; sourceTree = "<group>"; };
+		FA12BC34D5E6F708192A3B4B /* SelectionCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionCaptureService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -120,6 +122,7 @@
 				22A6147F3235591061E702C5 /* LLMRouter.swift */,
 				506F54642912F445479D3F7C /* OfflineLLMClient.swift */,
 				AEBC051C45D226CE70A63109 /* Permissions.swift */,
+				FA12BC34D5E6F708192A3B4B /* SelectionCaptureService.swift */,
 				F9B9E3E1C5F9123456789ABC /* SidecarLauncher.swift */,
 				2D57F00751A65B115B24C5D4 /* TextStabilizer.swift */,
 			);
@@ -273,6 +276,7 @@
 				AAAA3171A2FA636E95630EE0 /* PreviewModel.swift in Sources */,
 				87710849CEB3A66E70F84654 /* PreviewPanel.swift in Sources */,
 				F1261E36233BF186D5A8FC9A /* PreviewView.swift in Sources */,
+				FA12BC34D5E6F708192A3B4C /* SelectionCaptureService.swift in Sources */,
 				F9B9E3E1C5F9123456789ABD /* SidecarLauncher.swift in Sources */,
 				C41F4B9AA5E044CF2A275BC0 /* TextStabilizer.swift in Sources */,
 			);

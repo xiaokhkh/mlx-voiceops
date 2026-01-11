@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let clipboardPanel = ClipboardHistoryPanelController.shared
     private let translatePanel = SelectionTranslationPanelController.shared
     private let sidecarLauncher = SidecarLauncher.shared
-    private let focusInjector = FocusInjector()
+    private let selectionCapture = SelectionCaptureService.shared
     private var fnHoldActive = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -181,8 +181,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardPanel.hide()
         panel?.hide()
         Permissions.requestAccessibilityIfNeeded()
-        let selectedText = focusInjector.captureSelectedText()
-        translatePanel.show(text: selectedText)
+        Task { [weak self] in
+            guard let self else { return }
+            let selection = await selectionCapture.captureSelection()
+            await MainActor.run {
+                self.translatePanel.show(selection: selection)
+            }
+        }
     }
 
     private func updateStatusIndicator(_ state: FnSessionController.IndicatorState) {
@@ -797,19 +802,24 @@ final class SelectionTranslationViewModel: ObservableObject {
     private var task: Task<Void, Never>?
     private var pendingAssistantID: UUID?
 
-    func start(text: String?) {
+    func start(selection: SelectionCaptureResult) {
         task?.cancel()
         task = nil
         messages = []
         composerText = ""
         pendingAssistantID = nil
 
-        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            state = .error("No text selected.")
-            return
+        switch selection {
+        case .success(let text, _):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                state = .error("No text selected.")
+                return
+            }
+            sendUserMessage(trimmed)
+        case .empty, .failure:
+            state = .error(selection.userMessage)
         }
-
-        sendUserMessage(text)
     }
 
     func cancel() {
@@ -1089,11 +1099,11 @@ final class SelectionTranslationPanelController {
         createPanel()
     }
 
-    func show(text: String?) {
+    func show(selection: SelectionCaptureResult) {
         if panel == nil {
             createPanel()
         }
-        viewModel.start(text: text)
+        viewModel.start(selection: selection)
         panel?.show()
         startKeyMonitor()
     }
