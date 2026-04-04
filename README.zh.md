@@ -64,7 +64,7 @@ python server.py
 
 ```
 ollama serve
-ollama pull qwen2.5-coder:7b-instruct-q5_1
+ollama pull LFM2.5-1.2B-Instruct
 ```
 
 App 会调用 `http://127.0.0.1:11434/api/chat` 将最终文本翻译成英文。

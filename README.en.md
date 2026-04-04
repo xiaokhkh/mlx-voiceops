@@ -64,7 +64,7 @@ python server.py
 
 ```
 ollama serve
-ollama pull qwen2.5-coder:7b-instruct-q5_1
+ollama pull LFM2.5-1.2B-Instruct
 ```
 
 The app calls `http://127.0.0.1:11434/api/chat` and translates the final ASR text to English.

@@ -43,7 +43,7 @@ final class OfflineLLMClient {
     private let session: URLSession
 
     init(
-        model: String = "qwen2.5-coder:7b-instruct-q5_1",
+        model: String = "LFM2.5-1.2B-Instruct",
         session: URLSession = OfflineLLMClient.makeSession()
     ) {
         self.model = model
@@ -196,7 +196,7 @@ Your job:
 Runtime info (offline LLM):
 - Base URL: http://127.0.0.1:11434
 - API: POST /api/chat
-- Default model: qwen2.5-coder:7b-instruct-q5_1
+- Default model: LFM2.5-1.2B-Instruct
 - Request JSON: {"model":"<model>","messages":[{"role":"system","content":"..."},{"role":"user","content":"..."}],"stream":false}
 - Response JSON: {"message":{"role":"assistant","content":"<string>"}}
 """
